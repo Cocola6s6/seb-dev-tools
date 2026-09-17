@@ -203,7 +203,16 @@ pub fn DeployPage() -> View {
                 div(class="grid grid-4") {
                     div(class="field") {
                         label { "车辆编号 (bikeNo)" }
-                        input(r#type="text", bind:value=ctx.bike_no, placeholder="如 A60004000180")
+                        input(
+                            r#type="text",
+                            bind:value=ctx.bike_no,
+                            placeholder="如 A60004000180",
+                            on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                if ev.key() == "Tab" && !ev.shift_key() && ctx.bike_no.get_clone().trim().is_empty() {
+                                    ctx.bike_no.set("A60004000180".to_string());
+                                }
+                            }
+                        )
                     }
                     div(class="field") {
                         label { "中控设备序列号 (ecuNo)" }
@@ -211,12 +220,27 @@ pub fn DeployPage() -> View {
                             r#type="text",
                             bind:value=ctx.device_no,
                             placeholder="如 799497080",
-                            on:change=move |_| ctx.refresh_instance(true)
+                            on:change=move |_| ctx.refresh_instance(true),
+                            on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                if ev.key() == "Tab" && !ev.shift_key() && ctx.device_no.get_clone().trim().is_empty() {
+                                    ctx.device_no.set("799497080".to_string());
+                                    ctx.refresh_instance(true);
+                                }
+                            }
                         )
                     }
                     div(class="field") {
                         label { "电池编号 (batteryNo)" }
-                        input(r#type="text", bind:value=ctx.battery_no, placeholder="如 CTFG024B2E6S4012")
+                        input(
+                            r#type="text",
+                            bind:value=ctx.battery_no,
+                            placeholder="如 CTFG024B2E6S4012",
+                            on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                if ev.key() == "Tab" && !ev.shift_key() && ctx.battery_no.get_clone().trim().is_empty() {
+                                    ctx.battery_no.set("CTFG024B2E6S4012".to_string());
+                                }
+                            }
+                        )
                     }
                     div(class="field") {
                         label { "城市 (cityId)" }

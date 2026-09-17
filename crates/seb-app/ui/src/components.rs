@@ -29,10 +29,21 @@ pub fn Field(
     value: Signal<String>,
     #[prop(default)] placeholder: &'static str,
 ) -> View {
+    let ph = placeholder;
+    let on_keydown = move |ev: web_sys::KeyboardEvent| {
+        if ev.key() == "Tab" && !ev.shift_key() && value.get_clone().trim().is_empty() && !ph.is_empty() {
+            let fill_val = if let Some(stripped) = ph.strip_prefix("如 ") {
+                stripped
+            } else {
+                ph
+            };
+            value.set(fill_val.to_string());
+        }
+    };
     view! {
         div(class="field") {
             label { (label) }
-            input(r#type="text", placeholder=placeholder, bind:value=value)
+            input(r#type="text", placeholder=placeholder, bind:value=value, on:keydown=on_keydown)
         }
     }
 }
@@ -50,7 +61,13 @@ pub fn DeviceBar() -> View {
                         r#type="text",
                         placeholder="799497080",
                         bind:value=ctx.device_no,
-                        on:change=move |_| ctx.refresh_instance(true)
+                        on:change=move |_| ctx.refresh_instance(true),
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Tab" && !ev.shift_key() && ctx.device_no.get_clone().trim().is_empty() {
+                                ctx.device_no.set("799497080".to_string());
+                                ctx.refresh_instance(true);
+                            }
+                        }
                     )
                 }
                 Field(label="车辆编号 (仅用于日志)", value=ctx.bike_no, placeholder="如 A60004000180")
