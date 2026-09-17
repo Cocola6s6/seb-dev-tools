@@ -131,6 +131,9 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
     if ecu_no.is_empty() {
         return Err("中控设备序列号 (ecuNo) 不能为空".to_string());
     }
+    if battery_no.is_empty() {
+        return Err("电池编号 (batteryNo) 不能为空".to_string());
+    }
     if req.city_id < 0 {
         return Err("城市 ID 不能小于 0".to_string());
     }

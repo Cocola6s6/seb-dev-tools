@@ -97,9 +97,10 @@ pub fn DeployPage() -> View {
         loaded.set(true);
     });
 
-    let inputs = move || -> Option<(String, String)> {
+    let inputs = move || -> Option<(String, String, String)> {
         let bike_no = ctx.bike_no.get_clone().trim().to_string();
         let ecu_no = ctx.device_no.get_clone().trim().to_string();
+        let battery_no = ctx.battery_no.get_clone().trim().to_string();
         if bike_no.is_empty() {
             ctx.log_warn("【警告】请先填写车辆编号 (bikeNo)");
             return None;
@@ -108,11 +109,15 @@ pub fn DeployPage() -> View {
             ctx.log_warn("【警告】请先填写中控设备序列号 (ecuNo)");
             return None;
         }
-        Some((bike_no, ecu_no))
+        if battery_no.is_empty() {
+            ctx.log_warn("【警告】请先填写电池编号 (batteryNo)");
+            return None;
+        }
+        Some((bike_no, ecu_no, battery_no))
     };
 
     let deploy = move |_| {
-        let Some((bike_no, ecu_no)) = inputs() else {
+        let Some((bike_no, ecu_no, battery_no)) = inputs() else {
             return;
         };
         let city_id = ctx.city_id_value();
@@ -129,10 +134,10 @@ pub fn DeployPage() -> View {
         cfg.deploy.device_company_id = number(device_company_id.get_clone(), cfg.deploy.device_company_id);
         cfg.deploy.has_helmet = has_helmet.get();
         cfg.deploy.has_trunk = has_trunk.get();
+        cfg.battery_no = battery_no.clone();
         ctx.cfg.set(cfg.clone());
 
-        let (battery_no, bat_type_id, bat_pid) = (
-            ctx.battery_no.get_clone().trim().to_string(),
+        let (bat_type_id, bat_pid) = (
             cfg.deploy.battery_type_id,
             battery_pid.get_clone().trim().to_string(),
         );
@@ -195,7 +200,7 @@ pub fn DeployPage() -> View {
                     "基础信息"
                     span(class="tag") { "必填" }
                 }
-                div(class="grid grid-3") {
+                div(class="grid grid-4") {
                     div(class="field") {
                         label { "车辆编号 (bikeNo)" }
                         input(r#type="text", bind:value=ctx.bike_no, placeholder="如 100000001")
@@ -208,6 +213,10 @@ pub fn DeployPage() -> View {
                             placeholder="如 019552878",
                             on:change=move |_| ctx.refresh_instance(true)
                         )
+                    }
+                    div(class="field") {
+                        label { "电池编号 (batteryNo)" }
+                        input(r#type="text", bind:value=ctx.battery_no, placeholder="如 B00000001")
                     }
                     div(class="field") {
                         label { "城市 (cityId)" }
@@ -249,10 +258,6 @@ pub fn DeployPage() -> View {
                                 }
                             )
                         }
-                    }
-                    div(class="field") {
-                        label { "电池编号 (batteryNo)" }
-                        input(r#type="text", bind:value=ctx.battery_no, placeholder="选填，如 B00001")
                     }
                     div(class="field") {
                         label { "电池型号 (batteryTypeId)" }
