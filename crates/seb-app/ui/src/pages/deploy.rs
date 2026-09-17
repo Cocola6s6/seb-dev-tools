@@ -203,20 +203,20 @@ pub fn DeployPage() -> View {
                 div(class="grid grid-4") {
                     div(class="field") {
                         label { "车辆编号 (bikeNo)" }
-                        input(r#type="text", bind:value=ctx.bike_no, placeholder="如 100000001")
+                        input(r#type="text", bind:value=ctx.bike_no, placeholder="如 A60004000180")
                     }
                     div(class="field") {
                         label { "中控设备序列号 (ecuNo)" }
                         input(
                             r#type="text",
                             bind:value=ctx.device_no,
-                            placeholder="如 019552878",
+                            placeholder="如 799497080",
                             on:change=move |_| ctx.refresh_instance(true)
                         )
                     }
                     div(class="field") {
                         label { "电池编号 (batteryNo)" }
-                        input(r#type="text", bind:value=ctx.battery_no, placeholder="如 B00000001")
+                        input(r#type="text", bind:value=ctx.battery_no, placeholder="如 CTFG024B2E6S4012")
                     }
                     div(class="field") {
                         label { "城市 (cityId)" }

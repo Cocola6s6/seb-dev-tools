@@ -13,7 +13,7 @@ pub const MYSQL_USERNAME: &str = "dev_code_test";
 pub const MYSQL_PASSWORD: &str = "BA6B2030B21A22F7";
 pub const MYSQL_DATABASE: &str = "seb_goods_db";
 
-pub const DEFAULT_DEVICE_NO: &str = "019552878";
+pub const DEFAULT_DEVICE_NO: &str = "799497080";
 
 pub fn mq_endpoint() -> String {
     format!("{MQ_HOST}:{MQ_PORT}")

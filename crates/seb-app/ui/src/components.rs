@@ -48,12 +48,12 @@ pub fn DeviceBar() -> View {
                     label { "中控设备序列号 (DeviceNo)" }
                     input(
                         r#type="text",
-                        placeholder="019552878",
+                        placeholder="799497080",
                         bind:value=ctx.device_no,
                         on:change=move |_| ctx.refresh_instance(true)
                     )
                 }
-                Field(label="车辆编号 (仅用于日志)", value=ctx.bike_no, placeholder="选填")
+                Field(label="车辆编号 (仅用于日志)", value=ctx.bike_no, placeholder="如 A60004000180")
                 div(class="field") {
                     label { "实例号 (路由键后缀)" }
                     div(class="field-inline") {
