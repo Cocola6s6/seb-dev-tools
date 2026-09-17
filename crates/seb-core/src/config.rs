@@ -46,13 +46,12 @@ pub fn mysql() -> MysqlConfig {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct DeployDefaults {
     pub bike_type_id: i64,
     pub supplier_id: i64,
     pub dealer_id: i64,
     pub device_company_id: i64,
-    #[serde(default)]
     pub battery_type_id: i64,
     pub has_helmet: bool,
     pub has_trunk: bool,
@@ -73,16 +72,13 @@ impl Default for DeployDefaults {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct AppConfig {
     pub instance: String,
     pub device_no: String,
     pub bike_no: String,
-    #[serde(default)]
     pub battery_no: String,
-    #[serde(default)]
     pub city_id: i64,
-    #[serde(default)]
     pub deploy: DeployDefaults,
 }
 

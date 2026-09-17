@@ -6,16 +6,13 @@ use std::time::Duration;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
 pub struct DeployRequest {
     pub bike_no: String,
     pub ecu_no: String,
-    #[serde(default)]
     pub battery_no: String,
-    #[serde(default)]
     pub battery_type_id: i64,
-    #[serde(default)]
     pub battery_pid: String,
     pub city_id: i64,
     pub bike_type_id: i64,
