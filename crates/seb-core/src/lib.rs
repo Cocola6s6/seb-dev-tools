@@ -1,0 +1,66 @@
+pub mod config;
+pub mod db;
+pub mod device;
+pub mod ecu;
+pub mod frame;
+pub mod mq;
+pub mod payload;
+pub mod redis;
+
+pub use config::AppConfig;
+pub use mq::Publisher;
+
+pub mod exchange {
+    pub const CONTROL: &str = "seb.command.test";
+    pub const QUERY: &str = "seb.query.command.test";
+    pub const SET: &str = "seb.set.command.test";
+    pub const VOICE: &str = "seb.voice.command.test";
+}
+
+pub fn routing_key(exchange: &str, instance: &str) -> String {
+    let instance = instance.trim();
+    let instance = if instance.is_empty() { "0" } else { instance };
+    format!("{exchange}-{instance}")
+}
+
+pub mod command_code {
+    pub const QUERY: u16 = 0x07;
+    pub const SET: u16 = 0x08;
+    pub const VOICE: u16 = 0x0C;
+    pub const CONTROL: u16 = 0x2C;
+}
+
+pub const CONTROL_TYPES: &[(&str, u16)] = &[
+    ("远程设防", 0x01),
+    ("远程撤防", 0x02),
+    ("远程重启", 0x03),
+    ("立即定位", 0x08),
+    ("用户寻车", 0x09),
+    ("远程开锁(业务开锁)", 0x0B),
+    ("强制还车", 0x0C),
+    ("上报BMS电池数据", 0x0D),
+    ("远程打开电池锁", 0x0F),
+    ("远程关闭电池锁", 0x10),
+    ("远程打开后轮锁/头盔锁", 0x16),
+    ("远程关闭后轮锁/头盔锁", 0x17),
+    ("失能ACC", 0x1B),
+    ("使能ACC", 0x1C),
+    ("远程临时锁车", 0x30),
+    ("远程恢复开锁", 0x31),
+    ("上报融合定位包", 0x33),
+    ("运维寻车", 0x36),
+    ("上报多点定位包", 0x37),
+    ("远程打开头盔锁", 0x3E),
+    ("远程关闭头盔锁", 0x3F),
+    ("强制借车", 0x47),
+    ("预还车", 0x54),
+    ("远程开启尾箱锁", 0x55),
+    ("远程关闭尾箱锁", 0x56),
+];
+
+pub fn control_command_of(name: &str) -> Option<u16> {
+    CONTROL_TYPES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, v)| *v)
+}

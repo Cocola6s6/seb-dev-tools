@@ -1,0 +1,16 @@
+[package]
+name = "seb-core"
+version = "0.1.0"
+edition = "2021"
+description = "共享电单车中控调试与 ECU 配置发包工具核心库"
+license = "MIT"
+
+[dependencies]
+serde      = { workspace = true }
+serde_json = { workspace = true }
+tokio      = { workspace = true }
+anyhow     = { workspace = true }
+thiserror  = { workspace = true }
+amqprs     = { workspace = true }
+dirs       = { workspace = true }
+sqlx       = { workspace = true }

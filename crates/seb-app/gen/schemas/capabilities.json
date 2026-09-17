@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"默认能力集：仅需核心命令调用","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-start-dragging"]}}

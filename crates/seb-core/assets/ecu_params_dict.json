@@ -1,0 +1,432 @@
+{
+  "VIN": {
+    "name": "查询当前车辆电瓶电压",
+    "desc": "返回电压单位毫伏",
+    "defaultValue": null
+  },
+  "PULSE": {
+    "name": "读写当前定位器心跳包时间间隔",
+    "desc": "最小时间间隔为10s，默认为120s",
+    "defaultValue": "120"
+  },
+  "DOMAIN": {
+    "name": "查询当前终端域名",
+    "desc": "格式为www.tbitgps.com:8500支持直接设置IP的方式",
+    "defaultValue": "bike-seb.costrip.cn:8514"
+  },
+  "SLEEPT": {
+    "name": "终端静止进入半休眠的时间",
+    "desc": "用于设置终端静止多少分钟后进入半休眠状态",
+    "defaultValue": "10"
+  },
+  "OSDSWITCH": {
+    "name": "超速告警总开关",
+    "desc": "1表示开启，0为关闭",
+    "defaultValue": "1"
+  },
+  "OSDSPEED": {
+    "name": "超速语音提示的速度阀值",
+    "desc": "0~60单位km/h默认15",
+    "defaultValue": "15"
+  },
+  "OSDTIMEINTERVAL": {
+    "name": "超速语音提示的间隔时间",
+    "desc": "0~255单位秒默认3",
+    "defaultValue": "3"
+  },
+  "OSDTIMEMAX": {
+    "name": "超速语音提示的总时间长度",
+    "desc": "0~1800，为0不限制单位秒默认0",
+    "defaultValue": "0"
+  },
+  "DFTGBOSDVOICEALARM": {
+    "name": "是否使用国标超速告警",
+    "desc": "1表示使用标准的，0表示非标准的",
+    "defaultValue": "1"
+  },
+  "DFTALARMVOICET": {
+    "name": "播放告警语音的最小间隔",
+    "desc": "单位秒",
+    "defaultValue": null
+  },
+  "VIBL": {
+    "name": "设备震动灵敏度 ，取值越大越不灵敏",
+    "desc": "取值范围0~15，默认为3",
+    "defaultValue": "3"
+  },
+  "MAXECUSPEED": {
+    "name": "用于设置车辆最大速度",
+    "desc": "1~7,参数值=最大速度×4  单位km/h",
+    "defaultValue": "7"
+  },
+  "DFTLOCKTIMEPARAM": {
+    "name": "默认锁车时间参数",
+    "desc": "第一个值为锁电机时间，第二个值为锁电机后的过滤时间",
+    "defaultValue": "20-1"
+  },
+  "DFTALARMBUZZER": {
+    "name": "默认震动告警是否播放告警语音",
+    "desc": "1表示开启，0为关闭",
+    "defaultValue": "1"
+  },
+  "DFTBATTERLOCKTIME": {
+    "name": "默认电池锁的操作时间",
+    "desc": "默认1500",
+    "defaultValue": "1700"
+  },
+  "FREQ": {
+    "name": "定位包上报频率",
+    "desc": "1-60单位秒默认15",
+    "defaultValue": null
+  },
+  "DFTSEATUNLOCKLEVEL": {
+    "name": "后座锁解锁时检测线上的电平",
+    "desc": "0,1默认0",
+    "defaultValue": "1"
+  },
+  "DFTVOICEVOLUME": {
+    "name": "配置中控语音大小",
+    "desc": "取值范围0~7，取值越大，音量越大。",
+    "defaultValue": null
+  },
+  "DFTVIBFILTERREMIND": {
+    "name": "终端开锁状态下静止超过一定时间后主动上传事件报文",
+    "desc": "单位分钟，0关闭",
+    "defaultValue": null
+  },
+  "WAKEUPT": {
+    "name": "休眠后自动唤醒的时长",
+    "desc": "单位分钟，不可关闭",
+    "defaultValue": "360"
+  },
+  "DFTECMODBUSPANEL": {
+    "name": "中控支持仪表",
+    "desc": "0：关闭仪表功能（默认），1：支持仪表传电量SOC，2：支持仪表传电量SOC+剩余里程（KM）",
+    "defaultValue": "2"
+  },
+  "DFTBLE": {
+    "name": "蓝牙配置时间，此参数尽量不要改动",
+    "desc": "配置为1-6，其中1代表打开蓝牙，6代表蓝牙重新扫描的时间（用DFTBLESCANLIMIT查询时间）",
+    "defaultValue": "1"
+  },
+  "DFTSUPPORTBMS": {
+    "name": "中控直接和电池获取BMS",
+    "desc": "0：关闭，1：打开。",
+    "defaultValue": "1"
+  },
+  "DFTCTRLSUPBMS": {
+    "name": "中控通过控制器获取BMS",
+    "desc": "0：关闭，1：打开。",
+    "defaultValue": null
+  },
+  "DFTGETBMSTYPE": {
+    "name": "电池BMS的协议类型",
+    "desc": "1：泰比特MODBUS协议，3：佰格/国轩485协议",
+    "defaultValue": "26"
+  },
+  "DFTMAXMILEAGE": {
+    "name": "车辆最大剩余里程",
+    "desc": "默认95，单位km",
+    "defaultValue": null
+  },
+  "DFTCFAUTOGETBMS": {
+    "name": "设备借车状态下是否定时上报bms数据包",
+    "desc": "0：关闭，1：打开。",
+    "defaultValue": "0"
+  },
+  "DFTCFAUTOGETBMST": {
+    "name": "设备借车状态下定时上报bms数据包时间",
+    "desc": "单位分钟，最低10分钟",
+    "defaultValue": "0"
+  },
+  "DFTSFAUTOGETBMS": {
+    "name": "设备还车状态下是否定时上报bms数据包",
+    "desc": "0：关闭，1：打开。",
+    "defaultValue": "0"
+  },
+  "DFTPOSREPORTWAY": {
+    "name": "GPS定位和车辆状态上报方式",
+    "desc": "0：默认上报方式，车辆状态变化时上报1：定时上报方式，默认借车状态30s上报一次，还车状态1min上报一次",
+    "defaultValue": "1"
+  },
+  "DFTPOSREPORTFREQ": {
+    "name": "GPS定时上报方式频率设置",
+    "desc": "格式：借车上报频率(s)-还车上报频率(s)。默认值：30-60",
+    "defaultValue": "30-1200"
+  },
+  "DFTHELMETTYPE": {
+    "name": "头盔锁类型",
+    "desc": "0：4芯头盔锁1：6芯头盔锁2：4芯头盔锁(2代)3：485/串口协议智能通信头盔锁K3",
+    "defaultValue": "3"
+  },
+  "DFTHAVEWHEELLOCK": {
+    "name": "后轮锁类型",
+    "desc": "0：关闭，3：用作头盔锁",
+    "defaultValue": "3"
+  },
+  "DFTJHCCZWHEEL": {
+    "name": "借车、还车中控是否自动操作后轮锁",
+    "desc": "0：关闭，1：打开。默认建议关闭，由平台判断头盔状态来操作",
+    "defaultValue": "1"
+  },
+  "DFTREPCHECKWHESTATUS": {
+    "name": "还车是否由中控本地判断头盔归还状态",
+    "desc": "0：关闭，1：打开。默认建议关闭，由平台判断头盔状态来操作",
+    "defaultValue": "0"
+  },
+  "DFTHELMETCTRLVEHPOWER": {
+    "name": "车辆是否受头盔操作的影响（头盔未拔出、未佩戴等是否使车辆断电，禁止骑行）",
+    "desc": "0：关闭，1：打开。",
+    "defaultValue": "1"
+  },
+  "DFTHELMETWEARCHECK": {
+    "name": "是否开启头盔佩戴检测",
+    "desc": "0：关闭，1：打开。",
+    "defaultValue": "0"
+  },
+  "DFTHELMETUNSCANLOCKT": {
+    "name": "配置蓝牙头盔检测离线超时时间",
+    "desc": "单位秒，0不检测离线超时",
+    "defaultValue": "60"
+  },
+  "DFTBLEHELMETMAC": {
+    "name": "配置车辆绑定的蓝牙头盔mac地址",
+    "desc": "DFTBLEHELMETMAC=e7:4a:61:57:1d:ba",
+    "defaultValue": null
+  },
+  "DFTWHEELLOCKRESET": {
+    "name": "后轮锁/头盔锁是否需要打开复位操作",
+    "desc": "",
+    "defaultValue": "0"
+  },
+  "DFTWHEELCTRLRESETTIME": {
+    "name": "后轮锁/头盔锁复位操作的驱动时间",
+    "desc": "单位秒默认3",
+    "defaultValue": null
+  },
+  "DFTHELMETPOWERMODE": {
+    "name": "头盔锁是否需要供电",
+    "desc": "格式：是否需要供电-供电引脚示例：DFTHELMETPOWERMODE=0-17//头盔锁为常供电，17无效DFTHELMETPOWERMODE=1-17//1代表头盔锁需要打开4V供电，17是具体的引脚号，由开发人员提供",
+    "defaultValue": "1-16"
+  },
+  "DFTHELMETPOWERWORKTIME": {
+    "name": "对于需要供电的头盔锁，还车后当头盔放置不正确时头盔继续供电多少时间",
+    "desc": "单位分钟65535：永久等待，直到头盔放置正确（默认）0：不等待其他：等待多少分钟",
+    "defaultValue": null
+  },
+  "DFTHELMETOFFLINECTRL": {
+    "name": "对于智能头盔，头盔离线是否使车辆断电",
+    "desc": "1：头盔离线后车辆断电0：头盔离线车辆不断电（默认）",
+    "defaultValue": null
+  },
+  "DFTFAILJUDGE": {
+    "name": "车辆断开动力是否关闭ACC",
+    "desc": "1：关闭ACC0：不关闭ACC",
+    "defaultValue": "1"
+  },
+  "DFTAICAMERAFUNC": {
+    "name": "摄像头功能开启",
+    "desc": "0：关闭，4：得图S2摄像头",
+    "defaultValue": null
+  },
+  "DFTAICAMERAFUNCPARAM": {
+    "name": "摄像头相关功能参数",
+    "desc": "建议配置897",
+    "defaultValue": null
+  },
+  "DFTCAMERAPHOTOCOLOUR": {
+    "name": "摄像头识别颜色\\图标类型",
+    "desc": "示例DFTCAMERAPHOTOCOLOUR=10：算法使用10，不区分白天夜晚DFTCAMERAPHOTOCOLOUR=10-11：白天算法10+夜晚算法11得图S2摄像头目前支持以下颜色标志，需摄像头升级到对应版本持续更新：01-黄白|02-黄蓝|03-蓝白|04-蓝白高精度|05-蓝白A|06-黄白高精度|07-蓝白中精度|08-蓝白夜晚|09-黄蓝B|10-红白|11-红白夜晚|12红白高精度13-绿白T型|14-深绿白T型演示|15-黄白夜晚",
+    "defaultValue": null
+  },
+  "TRUNKLOCKTYPE": {
+    "name": "尾箱锁类型",
+    "desc": "1：四芯尾箱锁，2：六芯尾箱锁",
+    "defaultValue": "2"
+  },
+  "TRUNKLOCKTIME": {
+    "name": "尾箱锁驱动时间",
+    "desc": "单位ms，默认1000",
+    "defaultValue": "1000"
+  },
+  "TRUNKLOCKIMME": {
+    "name": "尾箱锁解锁后自动上锁",
+    "desc": "0：自动上锁时长默认15s，1自动上锁时间可设置",
+    "defaultValue": "1"
+  },
+  "TRUNKLOCKRESETTIME": {
+    "name": "尾箱锁解锁后自动上锁时间",
+    "desc": "单位ms，默认1000",
+    "defaultValue": "5000"
+  },
+  "TRUNKIOSWAP": {
+    "name": "尾箱锁供电io交换",
+    "desc": "1:交换供电io",
+    "defaultValue": "0"
+  },
+  "TRUNKDIOSWAP": {
+    "name": "尾箱锁检测",
+    "desc": "1：交换尾箱锁检测在位io",
+    "defaultValue": null
+  },
+  "TRUNKOUTAGE": {
+    "name": "尾箱锁断电逻辑",
+    "desc": "bit0//尾箱锁在位是否允许骑行bit1//尾箱锁不在位仅播语音，不断动力bit2//尾箱锁语音是否播报",
+    "defaultValue": "4"
+  },
+  "DFTUPLOADFUSEPOS": {
+    "name": "是否上传融合定位包",
+    "desc": "是否上传融合定位包",
+    "defaultValue": "1"
+  },
+  "DFTSUPPORTIMU": {
+    "name": "是否支持垂直停车",
+    "desc": "是否支持垂直停车",
+    "defaultValue": "2"
+  },
+  "DFTDISCONRELOGIN": {
+    "name": "链接断开发送重登陆报文",
+    "desc": "链接断开发送重登陆报文",
+    "defaultValue": "1"
+  },
+  "DFTUSEMULTIGPSPACKET": {
+    "name": "垂直停车是否上报多点定位包",
+    "desc": "垂直停车是否上报多点定位包",
+    "defaultValue": "1"
+  },
+  "DFTROLLOVERDETEVAL": {
+    "name": "倾倒阈值x轴-倾倒阈值y轴-倾倒阈值z轴",
+    "desc": "倾倒阈值x轴-倾倒阈值y轴-倾倒阈值z轴",
+    "defaultValue": "300:300:900"
+  },
+  "DFTROLLOVERDETE": {
+    "name": "侧翻告警参数",
+    "desc": "侧翻告警参数",
+    "defaultValue": "31"
+  },
+  "DFTGYROMISALIGN": {
+    "name": "陀螺仪角度调整",
+    "desc": "陀螺仪角度调整",
+    "defaultValue": "90:0:0"
+  },
+  "DFTHIGHACPROTOCOL": {
+    "name": "高精度定位信息",
+    "desc": "高精度定位信息",
+    "defaultValue": "0"
+  },
+  "TRUNKLOCKFUNC": {
+    "name": "尾箱锁支持功能",
+    "desc": "尾箱锁支持功能",
+    "defaultValue": "3"
+  },
+  "TRUNKDIO": {
+    "name": "尾箱锁检测io",
+    "desc": "尾箱锁检测io",
+    "defaultValue": "44-6"
+  },
+  "DFTHELMETSUPPORTFUN": {
+    "name": "头盔锁功能",
+    "desc": "头盔锁功能",
+    "defaultValue": "3"
+  },
+  "DFTWHEELLOCKTIME": {
+    "name": "头盔锁驱动时间",
+    "desc": "头盔锁驱动时间",
+    "defaultValue": "2000"
+  },
+  "DFTHELMETCONTROLEXCMD": {
+    "name": "使用0x10的指令",
+    "desc": "使用0x10的指令",
+    "defaultValue": "1"
+  },
+  "DFTHELMETCLOSEISAUTO": {
+    "name": "头盔锁是否带自动关锁",
+    "desc": "头盔锁是否带自动关锁",
+    "defaultValue": "0"
+  },
+  "DFTHELMETOPENISAUTO": {
+    "name": "头盔锁是否带自动开锁",
+    "desc": "头盔锁是否带自动开锁",
+    "defaultValue": "0"
+  },
+  "DFTUNWEARMIDOUT": {
+    "name": "安全骑行断电逻辑",
+    "desc": "安全骑行断电逻辑",
+    "defaultValue": "0"
+  },
+  "DFTHCPPTC": {
+    "name": "头盔锁控制整车供电语音播放间隔时间-头盔锁控制整车供电语音播放次数",
+    "desc": "头盔锁控制整车供电语音播放间隔时间-头盔锁控制整车供电语音播放次数",
+    "defaultValue": "2-5"
+  },
+  "DFTHAVESEATLOCK": {
+    "name": "电池锁配置",
+    "desc": "电池锁配置",
+    "defaultValue": "1"
+  },
+  "DFTSEATLOCKIMME": {
+    "name": "开电池锁后立即上锁",
+    "desc": "开电池锁后立即上锁",
+    "defaultValue": "1"
+  },
+  "DFTSEATLOCKCHECK": {
+    "name": "电池锁是否带检测线",
+    "desc": "电池锁是否带检测线",
+    "defaultValue": "1"
+  },
+  "DFTRESBATLOCKT": {
+    "name": "电池锁复位时间",
+    "desc": "电池锁复位时间",
+    "defaultValue": "5000"
+  },
+  "DFTMOTORPOLES": {
+    "name": "电机极对数",
+    "desc": "电机极对数",
+    "defaultValue": "26"
+  },
+  "DFTMOTORDIAMETER": {
+    "name": "后轮电机直径",
+    "desc": "后轮电机直径",
+    "defaultValue": "16"
+  },
+  "CONPROTOCOL": {
+    "name": "控制器协议",
+    "desc": "控制器协议",
+    "defaultValue": "6"
+  },
+  "DFTBMSOVERTEMP": {
+    "name": "电池高温预警功能-高温预警播放语音-播放语音次数-播放语音间隔-预警检测周期-高温预警温度",
+    "desc": "电池高温预警功能-高温预警播放语音-播放语音次数-播放语音间隔-预警检测周期-高温预警温度",
+    "defaultValue": "1-1-1-3-300-57"
+  },
+  "DFTSFAUTOGETBMST": {
+    "name": "设备还车状态下定时上报bms数据包时间",
+    "desc": "设备还车状态下定时上报bms数据包时间",
+    "defaultValue": "0"
+  },
+  "DFTSPITEFUNC": {
+    "name": "蓝牙道钉功能",
+    "desc": "蓝牙道钉功能",
+    "defaultValue": "1-1"
+  },
+  "DFTTBITSPITEFUNC": {
+    "name": "上报道钉类型",
+    "desc": "上报道钉类型",
+    "defaultValue": "1"
+  },
+  "VIN2": {
+    "name": "查询当前车辆电瓶电压",
+    "desc": "返回电压单位毫伏",
+    "defaultValue": null
+  },
+  "DFTBMSINFOCTRLBRORROW": {
+    "name": "读取BMS信息是否控制借车",
+    "desc": "电池信息是否控制借车逻辑-判断BMS通讯失败的延时语音播报时间-判断BMS通讯失败的延时语音播报次数",
+    "defaultValue": "0-30-3"
+  },
+  "DFTPOWERCTRLSEATRESET": {
+    "name": "无外电是否不复位电池锁",
+    "desc": "无外电是否不复位电池锁",
+    "defaultValue": "0"
+  }
+}

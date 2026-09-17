@@ -1,0 +1,80 @@
+name: Release App
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-tauri:
+    name: build-tauri (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            tauri-args: --target universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - platform: windows-latest
+            tauri-args: ""
+            rust-targets: ""
+    runs-on: ${{ matrix.platform }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: >-
+            wasm32-unknown-unknown${{ matrix.rust-targets != '' && format(',{0}', matrix.rust-targets) || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            crates/seb-app/ui -> target
+
+      - name: Install Trunk
+        shell: bash
+        run: |
+          TRUNK_VERSION="0.21.7"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            curl -LsSf "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+              | tar xzf - -C ~/.cargo/bin/
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            ARCH=$(uname -m)
+            if [[ "$ARCH" == "arm64" ]]; then
+              curl -LsSf "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-aarch64-apple-darwin.tar.gz" \
+                | tar xzf - -C ~/.cargo/bin/
+            else
+              curl -LsSf "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-apple-darwin.tar.gz" \
+                | tar xzf - -C ~/.cargo/bin/
+            fi
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            curl -LsSf -o trunk.zip "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-pc-windows-msvc.zip"
+            unzip -o trunk.zip -d "$HOME/.cargo/bin/"
+            rm trunk.zip
+          fi
+          trunk --version
+
+      - name: Build frontend (WASM)
+        working-directory: crates/seb-app/ui
+        run: trunk build --release
+
+      - name: Build Tauri app & upload to release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: crates/seb-app
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.tauri-args }}
