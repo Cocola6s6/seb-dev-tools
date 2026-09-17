@@ -70,7 +70,7 @@ pub async fn check_health(cfg: &MysqlConfig) -> Result<bool, String> {
 
 pub async fn check(cfg: &MysqlConfig) -> Result<String, String> {
     let pool = create_pool(cfg).await?;
-    let bikes: i64 = sqlx::query("select count(*) from bike_tb")
+    let bikes: i64 = sqlx::query("select count(*) from bike_tb where deleted = 0")
         .fetch_one(&pool)
         .await
         .map_err(|e| format!("读取 bike_tb 失败: {e}"))?
@@ -82,7 +82,7 @@ pub async fn check(cfg: &MysqlConfig) -> Result<String, String> {
         .get(0);
     pool.close().await;
     Ok(format!(
-        "{}:{}/{} 连接正常：bike_tb {} 条，待执行绑定队列 {} 条",
+        "{}:{}/{} 连接正常：bike_tb {} 条（未删除），待执行绑定队列 {} 条",
         cfg.host, cfg.port, cfg.database, bikes, queued
     ))
 }
@@ -91,7 +91,7 @@ pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<String
     let pool = create_pool(cfg).await?;
     let row = sqlx::query(
         "select ecu_no, city_id, road_status, business_status, deleted \
-         from bike_tb where bike_no = ? limit 1",
+         from bike_tb where bike_no = ? and deleted = 0 limit 1",
     )
     .bind(bike_no)
     .fetch_optional(&pool)
@@ -486,7 +486,7 @@ pub async fn load_deploy_options(cfg: &MysqlConfig) -> DeployOptions {
         }
     }
 
-    if let Ok(rows) = sqlx::query("SELECT code, company_name FROM seb_organization_db.device_company_tb ORDER BY code ASC")
+    if let Ok(rows) = sqlx::query("SELECT code, company_name FROM seb_organization_db.device_company_tb WHERE deleted = 0 ORDER BY code ASC")
         .fetch_all(&pool)
         .await
     {
