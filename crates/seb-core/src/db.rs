@@ -177,7 +177,7 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
         .map_err(|e| format!("更新 bike_tb 失败: {e}"))?
         .rows_affected();
         steps.push(format!(
-            "bike_tb: 车辆已存在，更新为 ecuNo={ecu_no} / cityId={} / road_status=put-in（影响 {affected} 行）",
+            "seb_goods_db.bike_tb: 车辆已存在，更新为 ecuNo={ecu_no} / cityId={} / road_status=put-in（影响 {affected} 行）",
             req.city_id
         ));
     } else {
@@ -205,7 +205,7 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
         .await
         .map_err(|e| format!("写入 bike_tb 失败: {e}"))?
         .last_insert_id();
-        steps.push(format!("bike_tb: 新增车辆 {bike_no}（code={code}）"));
+        steps.push(format!("seb_goods_db.bike_tb: 新增车辆 {bike_no}（code={code}）"));
     }
 
     if !battery_no.is_empty() {
@@ -236,7 +236,7 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
         .execute(&mut *tx)
         .await
         .map_err(|e| format!("写入/更新 battery_tb 失败: {e}"))?;
-        steps.push(format!("battery_tb: 写入/更新电池资产（batteryNo={battery_no}, road_status=put-in）"));
+        steps.push(format!("seb_goods_db.battery_tb: 写入/更新电池资产（batteryNo={battery_no}, road_status=put-in）"));
 
         // 2. 写入/更新 seb_goods_db.bike_battery_tb (业务绑定表)
         let _ = sqlx::query(
@@ -249,7 +249,7 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
         .execute(&mut *tx)
         .await
         .map_err(|e| format!("写入/更新 bike_battery_tb 失败: {e}"))?;
-        steps.push(format!("bike_battery_tb: 写入/更新车辆电池绑定（bikeNo={bike_no} -> batteryNo={battery_no}）"));
+        steps.push(format!("seb_goods_db.bike_battery_tb: 写入/更新车辆电池绑定（bikeNo={bike_no} -> batteryNo={battery_no}）"));
     }
 
     let queue_code = sqlx::query(
@@ -264,7 +264,7 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
     .map_err(|e| format!("写入 bike_ecu_relation_queue_tb 失败: {e}"))?
     .last_insert_id();
     steps.push(format!(
-        "bike_ecu_relation_queue_tb: 写入绑定队列（code={queue_code}, executed=1）"
+        "seb_goods_db.bike_ecu_relation_queue_tb: 写入绑定队列（code={queue_code}, executed=1）"
     ));
 
     tx.commit().await.map_err(|e| format!("提交事务失败: {e}"))?;

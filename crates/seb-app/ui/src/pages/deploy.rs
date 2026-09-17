@@ -179,7 +179,7 @@ pub fn DeployPage() -> View {
         }
         spawn_local(async move {
             match api::bike_lookup(&bike_no).await {
-                Ok(s) if s.is_empty() => ctx.log_warn(format!("bike_tb 中没有 {bike_no}")),
+                Ok(s) if s.is_empty() => ctx.log_warn(format!("seb_goods_db.bike_tb 中没有 {bike_no}")),
                 Ok(s) => ctx.log_info(s),
                 Err(e) => ctx.log_error(format!("【错误】{e}")),
             }
