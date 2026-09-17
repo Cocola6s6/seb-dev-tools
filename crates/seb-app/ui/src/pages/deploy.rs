@@ -15,6 +15,8 @@ fn default_zero() -> Vec<DeployOptionItem> {
 pub fn DeployPage() -> View {
     let ctx = use_context::<AppCtx>();
     let bike_type_id = create_signal(String::new());
+    let battery_type_id = create_signal(String::new());
+    let battery_pid = create_signal(String::new());
     let supplier_id = create_signal(String::new());
     let dealer_id = create_signal(String::new());
     let device_company_id = create_signal(String::new());
@@ -41,6 +43,15 @@ pub fn DeployPage() -> View {
             default_zero()
         } else {
             opts.bike_types
+        }
+    });
+
+    let battery_types = create_memo(move || {
+        let opts = ctx.deploy_options.get_clone();
+        if opts.battery_types.is_empty() {
+            default_zero()
+        } else {
+            opts.battery_types
         }
     });
 
@@ -77,6 +88,7 @@ pub fn DeployPage() -> View {
             return;
         }
         bike_type_id.set(cfg.deploy.bike_type_id.to_string());
+        battery_type_id.set(cfg.deploy.battery_type_id.to_string());
         supplier_id.set(cfg.deploy.supplier_id.to_string());
         dealer_id.set(cfg.deploy.dealer_id.to_string());
         device_company_id.set(cfg.deploy.device_company_id.to_string());
@@ -111,6 +123,7 @@ pub fn DeployPage() -> View {
         let number = |s: String, fallback: i64| s.trim().parse::<i64>().unwrap_or(fallback);
         let mut cfg = ctx.current_config();
         cfg.deploy.bike_type_id = number(bike_type_id.get_clone(), cfg.deploy.bike_type_id);
+        cfg.deploy.battery_type_id = number(battery_type_id.get_clone(), cfg.deploy.battery_type_id);
         cfg.deploy.supplier_id = number(supplier_id.get_clone(), cfg.deploy.supplier_id);
         cfg.deploy.dealer_id = number(dealer_id.get_clone(), cfg.deploy.dealer_id);
         cfg.deploy.device_company_id = number(device_company_id.get_clone(), cfg.deploy.device_company_id);
@@ -118,6 +131,11 @@ pub fn DeployPage() -> View {
         cfg.deploy.has_trunk = has_trunk.get();
         ctx.cfg.set(cfg.clone());
 
+        let (battery_no, bat_type_id, bat_pid) = (
+            ctx.battery_no.get_clone().trim().to_string(),
+            cfg.deploy.battery_type_id,
+            battery_pid.get_clone().trim().to_string(),
+        );
         let (batch, motor, frame) = (
             batch_no.get_clone().trim().to_string(),
             motor_no.get_clone().trim().to_string(),
@@ -140,7 +158,7 @@ pub fn DeployPage() -> View {
                 return;
             }
             let result = api::bike_deploy(
-                &bike_no, &ecu_no, city_id, bt_id, sp_id, dl_id, dc_id,
+                &bike_no, &ecu_no, &battery_no, bat_type_id, &bat_pid, city_id, bt_id, sp_id, dl_id, dc_id,
                 &batch, &motor, &frame, hl, tr
             ).await;
             ctx.apply_deploy(result);
@@ -168,7 +186,7 @@ pub fn DeployPage() -> View {
             div(class="page-head") {
                 div(class="page-title") { "一键接入" }
                 div(class="page-desc") {
-                    "快速接入车辆，完成接入后即可直接在「中控指令」和「中控配置」中进行调试。"
+                    "快速接入车辆与电池，完成接入后即可直接在「中控指令」和「中控配置」中进行调试。"
                 }
             }
 
@@ -224,6 +242,26 @@ pub fn DeployPage() -> View {
                                 view=move |item: DeployOptionItem| {
                                     let val = item.id.to_string();
                                     let is_selected = bike_type_id.get_clone() == val;
+                                    let text = item.label.clone();
+                                    view! {
+                                        option(value=val, selected=is_selected) { (text) }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    div(class="field") {
+                        label { "电池编号 (batteryNo)" }
+                        input(r#type="text", bind:value=ctx.battery_no, placeholder="选填，如 B00001")
+                    }
+                    div(class="field") {
+                        label { "电池型号 (batteryTypeId)" }
+                        select(on:change=move |ev| battery_type_id.set(select_value(ev))) {
+                            Indexed(
+                                list=battery_types,
+                                view=move |item: DeployOptionItem| {
+                                    let val = item.id.to_string();
+                                    let is_selected = battery_type_id.get_clone() == val;
                                     let text = item.label.clone();
                                     view! {
                                         option(value=val, selected=is_selected) { (text) }

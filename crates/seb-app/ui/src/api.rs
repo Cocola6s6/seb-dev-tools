@@ -84,6 +84,9 @@ pub async fn instance_lookup(device_no: &str) -> Result<Option<String>, String> 
 pub async fn bike_deploy(
     bike_no: &str,
     ecu_no: &str,
+    battery_no: &str,
+    battery_type_id: i64,
+    battery_pid: &str,
     city_id: i64,
     bike_type_id: i64,
     supplier_id: i64,
@@ -100,6 +103,9 @@ pub async fn bike_deploy(
     struct A<'a> {
         bike_no: &'a str,
         ecu_no: &'a str,
+        battery_no: &'a str,
+        battery_type_id: i64,
+        battery_pid: &'a str,
         city_id: i64,
         bike_type_id: i64,
         supplier_id: i64,
@@ -116,6 +122,9 @@ pub async fn bike_deploy(
         A {
             bike_no,
             ecu_no,
+            battery_no,
+            battery_type_id,
+            battery_pid,
             city_id,
             bike_type_id,
             supplier_id,

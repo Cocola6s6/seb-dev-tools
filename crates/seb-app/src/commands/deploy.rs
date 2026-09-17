@@ -9,6 +9,9 @@ pub async fn load_deploy_options() -> DeployOptions {
 pub async fn bike_deploy(
     bike_no: String,
     ecu_no: String,
+    battery_no: Option<String>,
+    battery_type_id: Option<i64>,
+    battery_pid: Option<String>,
     city_id: i64,
     bike_type_id: i64,
     supplier_id: i64,
@@ -23,6 +26,9 @@ pub async fn bike_deploy(
     let req = DeployRequest {
         bike_no,
         ecu_no,
+        battery_no: battery_no.unwrap_or_default(),
+        battery_type_id: battery_type_id.unwrap_or(0),
+        battery_pid: battery_pid.unwrap_or_default(),
         city_id,
         bike_type_id,
         supplier_id,

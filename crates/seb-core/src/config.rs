@@ -52,6 +52,8 @@ pub struct DeployDefaults {
     pub supplier_id: i64,
     pub dealer_id: i64,
     pub device_company_id: i64,
+    #[serde(default)]
+    pub battery_type_id: i64,
     pub has_helmet: bool,
     pub has_trunk: bool,
 }
@@ -63,6 +65,7 @@ impl Default for DeployDefaults {
             supplier_id: 0,
             dealer_id: 0,
             device_company_id: 0,
+            battery_type_id: 0,
             has_helmet: true,
             has_trunk: true,
         }
@@ -76,6 +79,8 @@ pub struct AppConfig {
     pub device_no: String,
     pub bike_no: String,
     #[serde(default)]
+    pub battery_no: String,
+    #[serde(default)]
     pub city_id: i64,
     #[serde(default)]
     pub deploy: DeployDefaults,
@@ -87,6 +92,7 @@ impl Default for AppConfig {
             instance: "0".to_string(),
             device_no: DEFAULT_DEVICE_NO.to_string(),
             bike_no: String::new(),
+            battery_no: String::new(),
             city_id: 0,
             deploy: DeployDefaults::default(),
         }

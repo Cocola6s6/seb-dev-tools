@@ -10,6 +10,8 @@ pub struct DeployDefaults {
     pub supplier_id: i64,
     pub dealer_id: i64,
     pub device_company_id: i64,
+    #[serde(default)]
+    pub battery_type_id: i64,
     pub has_helmet: bool,
     pub has_trunk: bool,
 }
@@ -21,6 +23,7 @@ impl Default for DeployDefaults {
             supplier_id: 0,
             dealer_id: 0,
             device_company_id: 0,
+            battery_type_id: 0,
             has_helmet: true,
             has_trunk: true,
         }
@@ -33,6 +36,8 @@ pub struct AppConfig {
     pub instance: String,
     pub device_no: String,
     pub bike_no: String,
+    #[serde(default)]
+    pub battery_no: String,
     pub city_id: i64,
     pub deploy: DeployDefaults,
 }
@@ -43,6 +48,7 @@ impl Default for AppConfig {
             instance: "0".into(),
             device_no: String::new(),
             bike_no: String::new(),
+            battery_no: String::new(),
             city_id: 0,
             deploy: DeployDefaults::default(),
         }
@@ -181,6 +187,7 @@ pub struct DeployOptions {
     pub suppliers: Vec<DeployOptionItem>,
     pub dealers: Vec<DeployOptionItem>,
     pub device_companies: Vec<DeployOptionItem>,
+    pub battery_types: Vec<DeployOptionItem>,
 }
 
 #[derive(Clone, Copy)]
@@ -189,6 +196,7 @@ pub struct AppCtx {
     pub cfg: Signal<AppConfig>,
     pub device_no: Signal<String>,
     pub bike_no: Signal<String>,
+    pub battery_no: Signal<String>,
     pub instance: Signal<String>,
     pub city_id: Signal<String>,
     pub conn: Signal<ConnState>,
@@ -207,6 +215,7 @@ impl AppCtx {
             cfg: create_signal(AppConfig::default()),
             device_no: create_signal(String::new()),
             bike_no: create_signal(String::new()),
+            battery_no: create_signal(String::new()),
             instance: create_signal("0".to_string()),
             city_id: create_signal("0".to_string()),
             conn: create_signal(ConnState::default()),
@@ -221,6 +230,7 @@ impl AppCtx {
         let mut cfg = self.cfg.get_clone();
         cfg.device_no = self.device_no.get_clone().trim().to_string();
         cfg.bike_no = self.bike_no.get_clone().trim().to_string();
+        cfg.battery_no = self.battery_no.get_clone().trim().to_string();
         cfg.instance = self.instance.get_clone().trim().to_string();
         cfg.city_id = self.city_id_value();
         cfg
@@ -233,6 +243,7 @@ impl AppCtx {
     pub fn adopt_config(&self, cfg: AppConfig) {
         self.device_no.set(cfg.device_no.clone());
         self.bike_no.set(cfg.bike_no.clone());
+        self.battery_no.set(cfg.battery_no.clone());
         self.instance.set(cfg.instance.clone());
         self.city_id.set(cfg.city_id.to_string());
         self.cfg.set(cfg);

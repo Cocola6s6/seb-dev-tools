@@ -11,6 +11,12 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 pub struct DeployRequest {
     pub bike_no: String,
     pub ecu_no: String,
+    #[serde(default)]
+    pub battery_no: String,
+    #[serde(default)]
+    pub battery_type_id: i64,
+    #[serde(default)]
+    pub battery_pid: String,
     pub city_id: i64,
     pub bike_type_id: i64,
     pub supplier_id: i64,
@@ -121,6 +127,7 @@ pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<String
 pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResult, String> {
     let bike_no = req.bike_no.trim();
     let ecu_no = req.ecu_no.trim();
+    let battery_no = req.battery_no.trim();
     if bike_no.is_empty() {
         return Err("车辆编号 (bikeNo) 不能为空".to_string());
     }
@@ -201,6 +208,50 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
         steps.push(format!("bike_tb: 新增车辆 {bike_no}（code={code}）"));
     }
 
+    if !battery_no.is_empty() {
+        let battery_pid = if req.battery_pid.trim().is_empty() {
+            battery_no
+        } else {
+            req.battery_pid.trim()
+        };
+
+        // 1. 写入/更新 seb_goods_db.battery_tb (资产表)
+        let _ = sqlx::query(
+            "insert into battery_tb (battery_no, battery_pid, battery_type_id, dealer_id, city_id, \
+             device_company_id, supplier_id, road_status, business_status, bind_time, deleted, \
+             create_time, update_time) \
+             values (?, ?, ?, ?, ?, ?, ?, 'put-in', 'normal', now(), 0, now(3), now(3)) \
+             on duplicate key update battery_pid = values(battery_pid), battery_type_id = values(battery_type_id), \
+             dealer_id = values(dealer_id), city_id = values(city_id), device_company_id = values(device_company_id), \
+             supplier_id = values(supplier_id), road_status = 'put-in', business_status = 'normal', \
+             deleted = 0, bind_time = now(), update_time = now(3)",
+        )
+        .bind(battery_no)
+        .bind(battery_pid)
+        .bind(req.battery_type_id)
+        .bind(req.dealer_id)
+        .bind(req.city_id)
+        .bind(req.device_company_id)
+        .bind(req.supplier_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("写入/更新 battery_tb 失败: {e}"))?;
+        steps.push(format!("battery_tb: 写入/更新电池资产（batteryNo={battery_no}, road_status=put-in）"));
+
+        // 2. 写入/更新 seb_goods_db.bike_battery_tb (业务绑定表)
+        let _ = sqlx::query(
+            "insert into bike_battery_tb (user_id, bike_no, battery_no, create_time, update_time) \
+             values (0, ?, ?, now(3), now(3)) \
+             on duplicate key update battery_no = values(battery_no), user_id = 0, update_time = now(3)",
+        )
+        .bind(bike_no)
+        .bind(battery_no)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("写入/更新 bike_battery_tb 失败: {e}"))?;
+        steps.push(format!("bike_battery_tb: 写入/更新车辆电池绑定（bikeNo={bike_no} -> batteryNo={battery_no}）"));
+    }
+
     let queue_code = sqlx::query(
         "insert into bike_ecu_relation_queue_tb (bike_no, ecu_no, city_id, executed, create_time) \
          values (?, ?, ?, 1, now(3))",
@@ -249,6 +300,20 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
             .execute(&report_pool)
             .await;
             steps.push("seb_report_db.bike_ecu_relation_tb: 写入中控绑定关系".to_string());
+        }
+
+        if !battery_no.is_empty() {
+            let _ = sqlx::query(
+                "insert into bike_battery_tb (bike_no, device_serial_no, battery_no, report_time, receive_time, create_time, update_time) \
+                 values (?, ?, ?, now(), now(), now(3), now(3)) \
+                 on duplicate key update device_serial_no = values(device_serial_no), battery_no = values(battery_no), report_time = now(), receive_time = now(), update_time = now(3)",
+            )
+            .bind(bike_no)
+            .bind(ecu_no)
+            .bind(battery_no)
+            .execute(&report_pool)
+            .await;
+            steps.push("seb_report_db.bike_battery_tb: 写入/同步 IoT 电池上报状态".to_string());
         }
 
         // 服务端下发指令前查 bike_basic_tb 判在线（last_connect_status_time 在 5 分钟内），
@@ -319,6 +384,7 @@ pub struct DeployOptions {
     pub suppliers: Vec<DeployOptionItem>,
     pub dealers: Vec<DeployOptionItem>,
     pub device_companies: Vec<DeployOptionItem>,
+    pub battery_types: Vec<DeployOptionItem>,
 }
 
 pub fn default_deploy_options() -> DeployOptions {
@@ -328,6 +394,7 @@ pub fn default_deploy_options() -> DeployOptions {
         suppliers: vec![DeployOptionItem { id: 0, label: "0".into() }],
         dealers: vec![DeployOptionItem { id: 0, label: "0".into() }],
         device_companies: vec![DeployOptionItem { id: 0, label: "0".into() }],
+        battery_types: vec![DeployOptionItem { id: 0, label: "0".into() }],
     }
 }
 
@@ -439,6 +506,27 @@ pub async fn load_deploy_options(cfg: &MysqlConfig) -> DeployOptions {
         }
     }
 
+    if let Ok(rows) = sqlx::query("SELECT code, model_type FROM seb_goods_db.battery_type_tb ORDER BY code ASC")
+        .fetch_all(&pool)
+        .await
+    {
+        let items: Vec<DeployOptionItem> = rows
+            .into_iter()
+            .map(|r| {
+                let id = r.get::<i32, _>("code") as i64;
+                let name = r.get::<String, _>("model_type");
+                let name = if name.trim().is_empty() { "未命名型号".to_string() } else { name };
+                DeployOptionItem {
+                    id,
+                    label: format!("{id} - {name}"),
+                }
+            })
+            .collect();
+        if !items.is_empty() {
+            defaults.battery_types = items;
+        }
+    }
+
     pool.close().await;
     defaults
 }
@@ -456,6 +544,7 @@ mod tests {
         assert!(!opts.suppliers.is_empty());
         assert!(!opts.dealers.is_empty());
         assert!(!opts.device_companies.is_empty());
+        assert!(!opts.battery_types.is_empty());
     }
 }
 
