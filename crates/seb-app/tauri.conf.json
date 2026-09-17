@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "共享单车调试工具",
+  "productName": "seb-dev-tools",
   "version": "0.1.0",
   "identifier": "cn.qkswq.seb.devtools",
   "build": {
