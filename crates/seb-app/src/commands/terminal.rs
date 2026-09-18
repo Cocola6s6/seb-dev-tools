@@ -73,8 +73,10 @@ fi"#
             format!(" | Select-String -Pattern '{regex}'")
         };
 
-        let win_cmd = format!(
-            r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; chcp 65001 > $null; if (Get-Command stern -ErrorAction SilentlyContinue) {{
+        let script = format!(
+            r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+chcp 65001 > $null
+if (Get-Command stern -ErrorAction SilentlyContinue) {{
     Write-Host "使用 stern 监听 seb-iot-receiver 日志..." -ForegroundColor Green
     stern 'seb-iot-receiver' -n shared-electric-bicycle --tail=200{filter_win}
 }} elseif (Get-Command kubectl -ErrorAction SilentlyContinue) {{
@@ -86,8 +88,10 @@ fi"#
 }}"#
         );
 
+        let encoded = encode_ps_command(&script);
+
         Command::new("cmd")
-            .args(["/c", "start", "powershell", "-NoExit", "-Command", &win_cmd])
+            .args(["/c", "start", "powershell", "-NoExit", "-EncodedCommand", &encoded])
             .spawn()
             .map_err(|e| format!("Windows 拉起 PowerShell 失败: {e}"))?;
     }
@@ -124,4 +128,34 @@ pub fn open_external_url(url: String) -> Result<(), String> {
         let _ = Command::new("xdg-open").arg(&url).spawn();
     }
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn encode_ps_command(script: &str) -> String {
+    let utf16_bytes: Vec<u8> = script
+        .encode_utf16()
+        .flat_map(|u| u.to_le_bytes())
+        .collect();
+
+    const B64_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((utf16_bytes.len() + 2) / 3 * 4);
+    for chunk in utf16_bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+
+        out.push(B64_CHARS[(b0 >> 2) as usize] as char);
+        out.push(B64_CHARS[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(B64_CHARS[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(B64_CHARS[(b2 & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
 }

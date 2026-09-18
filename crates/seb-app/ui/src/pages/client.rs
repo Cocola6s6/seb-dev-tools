@@ -228,6 +228,32 @@ pub fn ClientPage() -> View {
                         }
 
                         div(class="section") {
+                            div(class="section-title") { "告警与心跳" }
+                            div(class="field") {
+                                label { "告警类型" }
+                                select(class="w-lg", on:change=move |ev| c.alarm_type.set(select_value(ev))) {
+                                    Indexed(
+                                        list=c.alarm_types,
+                                        view=move |a: AlarmType| {
+                                            let value = a.code.to_string();
+                                            let selected = c.alarm_type.get_clone() == value;
+                                            let text = format!("{}  ({})", a.name, a.hex);
+                                            view! { option(value=value, selected=selected) { (text) } }
+                                        }
+                                    )
+                                }
+                            }
+                            div(class="card-actions") {
+                                button(class="primary", on:click=send_alarm) { "上报告警" }
+                                button(on:click=move |_| {
+                                    if let Some(no) = selected_no(c, ctx) {
+                                        run_client_named(ctx, "发送心跳", api::client_send_ping(no));
+                                    }
+                                }) { "发心跳" }
+                            }
+                        }
+
+                        div(class="section") {
                             div(class="section-title") { "指令应答" }
                             div(class="row checks") {
                                 Check(label="自动应答", checked=c.auto_reply)
@@ -251,32 +277,6 @@ pub fn ClientPage() -> View {
                                         run_client_named(ctx, "手动回失败", api::client_send_reply(no, false));
                                     }
                                 }) { "手动回失败" }
-                            }
-                        }
-
-                        div(class="section") {
-                            div(class="section-title") { "告警与心跳" }
-                            div(class="field") {
-                                label { "告警类型" }
-                                select(class="w-lg", on:change=move |ev| c.alarm_type.set(select_value(ev))) {
-                                    Indexed(
-                                        list=c.alarm_types,
-                                        view=move |a: AlarmType| {
-                                            let value = a.code.to_string();
-                                            let selected = c.alarm_type.get_clone() == value;
-                                            let text = format!("{}  ({})", a.name, a.hex);
-                                            view! { option(value=value, selected=selected) { (text) } }
-                                        }
-                                    )
-                                }
-                            }
-                            div(class="card-actions") {
-                                button(class="primary", on:click=send_alarm) { "上报告警" }
-                                button(on:click=move |_| {
-                                    if let Some(no) = selected_no(c, ctx) {
-                                        run_client_named(ctx, "发送心跳", api::client_send_ping(no));
-                                    }
-                                }) { "发心跳" }
                             }
                         }
                     }
