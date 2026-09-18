@@ -15,10 +15,6 @@ pub const MYSQL_DATABASE: &str = "seb_goods_db";
 
 pub const DEFAULT_DEVICE_NO: &str = "799497080";
 
-pub fn mq_endpoint() -> String {
-    format!("{MQ_HOST}:{MQ_PORT}")
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MysqlConfig {
@@ -80,6 +76,7 @@ pub struct AppConfig {
     pub battery_no: String,
     pub city_id: i64,
     pub deploy: DeployDefaults,
+    pub sim_devices: Vec<crate::device::DeviceConfig>,
 }
 
 impl Default for AppConfig {
@@ -91,6 +88,7 @@ impl Default for AppConfig {
             battery_no: String::new(),
             city_id: 0,
             deploy: DeployDefaults::default(),
+            sim_devices: Vec::new(),
         }
     }
 }

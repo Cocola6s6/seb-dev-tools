@@ -1,4 +1,4 @@
-use seb_core::device::DeviceLink;
+use seb_core::device::DeviceFleet;
 use seb_core::mq::PublishRecord;
 use seb_core::{AppConfig, Publisher};
 use serde::{Deserialize, Serialize};
@@ -14,14 +14,16 @@ pub mod terminal;
 
 pub struct AppState {
     pub publisher: Mutex<Publisher>,
-    pub device: DeviceLink,
+    pub devices: DeviceFleet,
 }
 
 impl AppState {
     pub fn new(cfg: AppConfig) -> Self {
+        let devices = DeviceFleet::default();
+        devices.seed(cfg.sim_devices.clone());
         Self {
             publisher: Mutex::new(Publisher::new(cfg)),
-            device: DeviceLink::new(),
+            devices,
         }
     }
 }

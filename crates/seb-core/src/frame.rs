@@ -433,28 +433,6 @@ fn fixed_ascii(text: &str, len: usize) -> Vec<u8> {
     out
 }
 
-pub fn from_hex(text: &str) -> Result<Vec<u8>, String> {
-    let cleaned: String = text
-        .replace("0x", "")
-        .replace("0X", "")
-        .chars()
-        .filter(|c| !c.is_whitespace() && *c != ',' && *c != '-')
-        .collect();
-    if cleaned.is_empty() {
-        return Err("报文内容不能为空".to_string());
-    }
-    if cleaned.len() % 2 != 0 {
-        return Err(format!("十六进制长度必须是偶数，当前 {} 个字符", cleaned.len()));
-    }
-    (0..cleaned.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&cleaned[i..i + 2], 16)
-                .map_err(|_| format!("非法的十六进制片段: {}", &cleaned[i..i + 2]))
-        })
-        .collect()
-}
-
 pub fn to_hex(data: &[u8]) -> String {
     data.iter().map(|b| format!("{b:02x}")).collect()
 }

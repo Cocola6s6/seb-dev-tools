@@ -3,6 +3,18 @@ use serde::{Deserialize, Serialize};
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
+/// 中控指令、中控配置这些只打内网后台，所以要认得出设备连的是哪套网关
+pub const INNER_HOST: &str = "bike-seb-inner-test.costrip.cn";
+
+pub fn host_label(host: &str) -> String {
+    match host {
+        INNER_HOST => "内网".to_string(),
+        "bike-seb-test.costrip.cn" => "外网".to_string(),
+        "bike-seb.costrip.cn" => "正式".to_string(),
+        other => other.to_string(),
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct DeployDefaults {
@@ -177,6 +189,8 @@ pub struct LogEntry {
     pub tint: &'static str,
     /// 收发报文才有：Some("up") 上行、Some("down") 下行
     pub dir: Option<&'static str>,
+    /// 模拟设备产生的日志才有
+    pub device: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -245,19 +259,45 @@ impl Default for SimProfile {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DeviceConfig {
+    pub device_no: String,
+    pub host: String,
+    pub port: u16,
+    pub soft_version: String,
+    pub heartbeat: bool,
+    pub auto_reply: bool,
+    pub profile: SimProfile,
+}
+
+impl Default for DeviceConfig {
+    fn default() -> Self {
+        Self {
+            device_no: String::new(),
+            host: String::new(),
+            port: 32405,
+            soft_version: String::new(),
+            heartbeat: true,
+            auto_reply: true,
+            profile: SimProfile::default(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct DeviceState {
     pub connected: bool,
     pub endpoint: String,
-    pub device_no: String,
-    pub auto_reply: bool,
     pub last_msg_id: Option<String>,
+    pub config: DeviceConfig,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FrameLog {
+    pub device_no: String,
     pub dir: String,
     pub summary: String,
     pub hex: String,
@@ -283,15 +323,14 @@ pub struct ClientDefaults {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientPoll {
-    pub state: DeviceState,
+    pub devices: Vec<DeviceState>,
     pub frames: Vec<FrameLog>,
 }
 
 /// 客户端页面的表单状态放在全局，切页后回来不会丢。
 #[derive(Clone, Copy)]
 pub struct ClientCtx {
-    pub host: Signal<String>,
-    pub port: Signal<String>,
+    pub gateway: Signal<String>,
     pub soft_version: Signal<String>,
     pub heartbeat: Signal<bool>,
     pub auto_reply: Signal<bool>,
@@ -309,15 +348,18 @@ pub struct ClientCtx {
     pub deflection_angle: Signal<String>,
     pub alarm_type: Signal<String>,
     pub alarm_types: Signal<Vec<AlarmType>>,
-    pub state: Signal<DeviceState>,
+    pub devices: Signal<Vec<DeviceState>>,
+    pub selected: Signal<String>,
+    /// 表单当前归属的设备：切设备时先置空，避免把上一台的值写进新设备
+    pub owner: Signal<String>,
+    pub device_no: Signal<String>,
 }
 
 impl ClientCtx {
     fn new() -> Self {
         let d = SimProfile::default();
         Self {
-            host: create_signal(String::new()),
-            port: create_signal("32405".to_string()),
+            gateway: create_signal(String::new()),
             soft_version: create_signal(String::new()),
             heartbeat: create_signal(true),
             auto_reply: create_signal(true),
@@ -335,14 +377,73 @@ impl ClientCtx {
             deflection_angle: create_signal(d.deflection_angle.to_string()),
             alarm_type: create_signal(String::new()),
             alarm_types: create_signal(Vec::new()),
-            state: create_signal(DeviceState::default()),
+            devices: create_signal(Vec::new()),
+            selected: create_signal(String::new()),
+            owner: create_signal(String::new()),
+            device_no: create_signal(String::new()),
         }
     }
 
     pub fn adopt_defaults(&self, d: ClientDefaults) {
-        self.host.set(d.host);
-        self.port.set(d.port.to_string());
+        self.gateway.set(format!("{}:{}", d.host, d.port));
         self.soft_version.set(d.soft_version);
+    }
+
+    pub fn current(&self) -> Option<DeviceState> {
+        let no = self.selected.get_clone();
+        self.devices.get_clone().into_iter().find(|d| d.config.device_no == no)
+    }
+
+    pub fn split_gateway(&self) -> (String, u16) {
+        let text = self.gateway.get_clone();
+        let (host, port) = text.trim().rsplit_once(':').unwrap_or((text.trim(), ""));
+        (host.trim().to_string(), port.trim().parse().unwrap_or(0))
+    }
+
+    pub fn config(&self, device_no: String, battery_no: String) -> DeviceConfig {
+        let (host, port) = self.split_gateway();
+        DeviceConfig {
+            device_no,
+            host,
+            port,
+            soft_version: self.soft_version.get_clone(),
+            heartbeat: self.heartbeat.get(),
+            auto_reply: self.auto_reply.get(),
+            profile: self.profile(battery_no),
+        }
+    }
+
+    /// 切换设备：先摘掉表单归属再灌值，最后认领新设备
+    pub fn select(&self, device_no: &str) {
+        let found = self
+            .devices
+            .get_clone()
+            .into_iter()
+            .find(|d| d.config.device_no == device_no);
+        self.owner.set(String::new());
+        self.selected.set(device_no.to_string());
+        self.device_no.set(device_no.to_string());
+        if let Some(st) = found {
+            let c = st.config;
+            self.gateway.set(format!("{}:{}", c.host, c.port));
+            self.soft_version.set(c.soft_version);
+            self.heartbeat.set(c.heartbeat);
+            self.auto_reply.set(c.auto_reply);
+            let p = c.profile;
+            self.reply_success.set(p.reply_success);
+            self.reply_with_location.set(p.reply_with_location);
+            self.coordinates.set(p.coordinates);
+            self.vehicle_state.set(p.vehicle_state.to_string());
+            self.motion.set(p.motion);
+            self.soc.set(p.soc.to_string());
+            self.speed.set(p.speed.to_string());
+            self.helmet_lock_unlocked.set(p.helmet_lock_unlocked);
+            self.helmet_present.set(p.helmet_present);
+            self.trunk_latch.set(p.trunk_latch);
+            self.acc_on.set(p.acc_on);
+            self.deflection_angle.set(p.deflection_angle.to_string());
+        }
+        self.owner.set(device_no.to_string());
     }
 
     pub fn profile(&self, battery_no: String) -> SimProfile {
@@ -444,18 +545,23 @@ impl AppCtx {
     }
 
     pub fn log(&self, text: impl Into<String>, level: LogLevel) {
-        self.log_tinted(text, level, self.page.get().tint(), None);
+        self.log_tinted(text, level, self.page.get().tint(), None, String::new());
     }
 
     /// 客户端的收发固定用客户端配色：指令常常是在「中控指令」页发出的，但回包属于客户端
     pub fn log_client(&self, text: impl Into<String>, level: LogLevel) {
-        self.log_tinted(text, level, Page::Client.tint(), None);
+        let device = self.client.selected.get_clone();
+        self.log_tinted(text, level, Page::Client.tint(), None, device);
     }
 
-    /// 报文日志：上行还是下行要一眼能分出来
-    pub fn log_frame(&self, dir: &str, text: impl Into<String>) {
-        let dir = if dir == "up" { "up" } else { "down" };
-        self.log_tinted(text, LogLevel::Info, Page::Client.tint(), Some(dir));
+    /// 报文日志：上行还是下行、是哪台设备，都要一眼能分出来
+    pub fn log_frame(&self, dir: &str, device: &str, text: impl Into<String>) {
+        let dir = match dir {
+            "up" => Some("up"),
+            "down" => Some("down"),
+            _ => None,
+        };
+        self.log_tinted(text, LogLevel::Info, Page::Client.tint(), dir, device.to_string());
     }
 
     fn log_tinted(
@@ -464,6 +570,7 @@ impl AppCtx {
         level: LogLevel,
         tint: &'static str,
         dir: Option<&'static str>,
+        device: String,
     ) {
         let entry = LogEntry {
             ts: now_hms(),
@@ -471,6 +578,7 @@ impl AppCtx {
             level,
             tint,
             dir,
+            device,
         };
         let mut list = self.logs.get_clone();
         list.push(entry);

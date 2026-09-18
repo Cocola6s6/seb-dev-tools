@@ -1,6 +1,8 @@
 use crate::api;
-use crate::state::{AppCtx, LogEntry};
+use crate::state::{AppCtx, LogEntry, Page, INNER_HOST};
 use gloo_timers::future::TimeoutFuture;
+use std::cell::Cell;
+use std::rc::Rc;
 use sycamore::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
@@ -197,24 +199,90 @@ pub fn Field(
 #[component]
 pub fn DeviceBar() -> View {
     let ctx = use_context::<AppCtx>();
+    let open = create_signal(false);
+    // 点箭头展开的是整份清单，输入时才按已敲的位数过滤
+    let show_all = create_signal(false);
+    let matches = create_memo(move || {
+        let kw = if show_all.get() {
+            String::new()
+        } else {
+            ctx.device_no.get_clone().trim().to_string()
+        };
+        ctx.client
+            .devices
+            .get_clone()
+            .into_iter()
+            // 这两个页面只打内网后台，连别的网关的设备列出来也没法用
+            .filter(|d| d.config.host == INNER_HOST && (kw.is_empty() || d.config.device_no.contains(&kw)))
+            .collect::<Vec<_>>()
+    });
     view! {
         div(class="section") {
             div(class="section-title") { "设备" }
             div(class="grid grid-2") {
-                div(class="field") {
+                div(class="field combo") {
                     label { "中控设备序列号 (DeviceNo)" }
-                    input(
-                        r#type="text",
-                        placeholder="799497080",
-                        bind:value=ctx.device_no,
-                        on:change=move |_| ctx.refresh_instance(true),
-                        on:keydown=move |ev: web_sys::KeyboardEvent| {
-                            if ev.key() == "Tab" && !ev.shift_key() && ctx.device_no.get_clone().trim().is_empty() {
-                                ctx.device_no.set("799497080".to_string());
-                                ctx.refresh_instance(true);
+                    div(class="combo-input") {
+                        input(
+                            r#type="text",
+                            placeholder="799497080",
+                            bind:value=ctx.device_no,
+                            on:focus=move |_| { show_all.set(false); open.set(true); },
+                            on:blur=move |_| open.set(false),
+                            on:change=move |_| ctx.refresh_instance(true),
+                            on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                if ev.key() == "Tab" && !ev.shift_key() && ctx.device_no.get_clone().trim().is_empty() {
+                                    ctx.device_no.set("799497080".to_string());
+                                    ctx.refresh_instance(true);
+                                }
+                            }
+                        )
+                        // 拦下默认行为，免得抢走输入框的焦点、打断正在敲的内容
+                        button(
+                            class=move || if open.get() { "combo-caret open" } else { "combo-caret" },
+                            on:mousedown=move |ev: web_sys::MouseEvent| {
+                                ev.prevent_default();
+                                let was = open.get();
+                                show_all.set(!was);
+                                open.set(!was);
+                            }
+                        ) {
+                            svg(viewBox="0 0 10 6", width="10", height="6") {
+                                path(d="M1 1l4 4 4-4", fill="none", stroke="currentColor", stroke-width="1.6", stroke-linecap="round", stroke-linejoin="round")
                             }
                         }
-                    )
+                    }
+                    // 箭头展开时输入框没有焦点，得靠这层透明幕布收起列表
+                    (if open.get() && show_all.get() {
+                        view! { div(class="combo-backdrop", on:mousedown=move |_| open.set(false)) {} }
+                    } else {
+                        view! {}
+                    })
+                    (if open.get() && !matches.get_clone().is_empty() {
+                        view! {
+                            div(class="combo-list", on:mousedown=move |ev: web_sys::MouseEvent| ev.prevent_default()) {
+                                Indexed(
+                                    list=matches,
+                                    view=move |st: crate::state::DeviceState| {
+                                        let no = st.config.device_no.clone();
+                                        let pick = no.clone();
+                                        view! {
+                                            div(class="combo-item", on:click=move |_| {
+                                                ctx.device_no.set(pick.clone());
+                                                ctx.refresh_instance(true);
+                                                open.set(false);
+                                            }) {
+                                                span(class="k") { (no) }
+                                                span(class=if st.connected { "dev-dot on" } else { "dev-dot off" }) {}
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    } else {
+                        view! {}
+                    })
                 }
                 div(class="field") {
                     label { "实例号 (路由键后缀)" }
@@ -338,6 +406,23 @@ pub fn LogPane() -> View {
     let minimized = create_signal(false);
     let height = create_signal(210);
     let is_resizing = create_signal(false);
+
+    // 只有中控客户端页会自动收日志：设备一多列表就要占地方。
+    // 切到别的页就展开回来，且只在切页、设备数刚过线这两下动手，之后不跟用户抢
+    let prev = Rc::new(Cell::new((Page::Deploy, false)));
+    create_effect(move || {
+        let page = ctx.page.get();
+        let crowded = page == Page::Client && ctx.client.devices.get_clone().len() > 4;
+        let (prev_page, prev_crowded) = prev.get();
+        prev.set((page, crowded));
+        if page != Page::Client {
+            if page != prev_page {
+                minimized.set(false);
+            }
+        } else if crowded && !prev_crowded {
+            minimized.set(true);
+        }
+    });
 
     create_effect(move || {
         let _ = ctx.logs.get_clone().len();
@@ -471,10 +556,16 @@ pub fn LogPane() -> View {
                                     Some(_) => view! { span(class="dir down") { "↓" } },
                                     None => view! {},
                                 };
+                                let dev = if entry.device.is_empty() {
+                                    view! {}
+                                } else {
+                                    view! { span(class="log-dev") { (format!("[{}]", entry.device)) } }
+                                };
                                 view! {
                                     div(class=cls) {
                                         span(class=ts_cls) { (entry.ts) }
                                         (dir)
+                                        (dev)
                                         span { (entry.text) }
                                     }
                                 }

@@ -12,31 +12,6 @@ pub struct EcuParam {
     pub default_value: Option<String>,
 }
 
-impl EcuParam {
-    pub fn description(&self) -> String {
-        let mut text = self.name.clone();
-        if !self.desc.is_empty() && self.desc != "-" {
-            text.push_str(&format!("，{}", self.desc));
-        }
-        if let Some(v) = &self.default_value {
-            text.push_str(&format!(" [默认: {v}]"));
-        }
-        if text.is_empty() {
-            self.key.clone()
-        } else {
-            text
-        }
-    }
-
-    pub fn matches(&self, keyword: &str) -> bool {
-        let kw = keyword.trim().to_uppercase();
-        if kw.is_empty() {
-            return true;
-        }
-        self.key.to_uppercase().contains(&kw) || self.name.to_uppercase().contains(&kw)
-    }
-}
-
 #[derive(Deserialize)]
 struct RawParam {
     #[serde(default)]

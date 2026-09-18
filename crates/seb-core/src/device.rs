@@ -113,28 +113,51 @@ impl SimProfile {
     }
 }
 
+/// 一台模拟设备的全部配置，随设备清单一起落盘
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DeviceConfig {
+    pub device_no: String,
+    pub host: String,
+    pub port: u16,
+    pub soft_version: String,
+    pub heartbeat: bool,
+    pub auto_reply: bool,
+    pub profile: SimProfile,
+}
+
+impl Default for DeviceConfig {
+    fn default() -> Self {
+        Self {
+            device_no: String::new(),
+            host: DEFAULT_GATEWAY_HOST.to_string(),
+            port: DEFAULT_GATEWAY_PORT,
+            soft_version: frame::DEFAULT_SOFT_VERSION.to_string(),
+            heartbeat: true,
+            auto_reply: true,
+            profile: SimProfile::default(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceState {
     pub connected: bool,
     pub endpoint: String,
-    pub device_no: String,
-    /// 收到下发指令时是否自动回应答
-    pub auto_reply: bool,
     /// 最近一次收到的下发指令 msgId，手动应答时用
     pub last_msg_id: Option<String>,
+    pub config: DeviceConfig,
 }
 
 #[derive(Default)]
 struct Shared {
     connected: AtomicBool,
-    auto_reply: AtomicBool,
     /// 每次连接自增；旧的读/心跳任务发现代数变了就退出
     generation: Mutex<u64>,
     endpoint: Mutex<String>,
-    device_no: Mutex<String>,
     last_msg_id: Mutex<Option<String>>,
-    profile: Mutex<SimProfile>,
+    cfg: Mutex<DeviceConfig>,
     buffer: Mutex<Vec<FrameLog>>,
 }
 
@@ -151,6 +174,10 @@ impl Shared {
     fn generation(&self) -> u64 {
         *self.generation.lock().unwrap()
     }
+
+    fn cfg(&self) -> DeviceConfig {
+        self.cfg.lock().unwrap().clone()
+    }
 }
 
 pub struct DeviceLink {
@@ -158,16 +185,10 @@ pub struct DeviceLink {
     writer: Arc<tokio::sync::Mutex<Option<OwnedWriteHalf>>>,
 }
 
-impl Default for DeviceLink {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DeviceLink {
-    pub fn new() -> Self {
+    pub fn new(cfg: DeviceConfig) -> Self {
         let shared = Arc::new(Shared::default());
-        shared.auto_reply.store(true, Ordering::Relaxed);
+        *shared.cfg.lock().unwrap() = cfg;
         Self {
             shared,
             writer: Arc::new(tokio::sync::Mutex::new(None)),
@@ -178,26 +199,39 @@ impl DeviceLink {
         DeviceState {
             connected: self.shared.connected.load(Ordering::Relaxed),
             endpoint: self.shared.endpoint.lock().unwrap().clone(),
-            device_no: self.shared.device_no.lock().unwrap().clone(),
-            auto_reply: self.shared.auto_reply.load(Ordering::Relaxed),
             last_msg_id: self.shared.last_msg_id.lock().unwrap().clone(),
+            config: self.shared.cfg(),
         }
     }
 
-    pub fn set_auto_reply(&self, on: bool) {
-        self.shared.auto_reply.store(on, Ordering::Relaxed);
+    pub fn config(&self) -> DeviceConfig {
+        self.shared.cfg()
     }
 
-    pub fn set_profile(&self, profile: SimProfile) {
-        *self.shared.profile.lock().unwrap() = profile;
+    /// 改配置不影响已经建立的链路，网关地址要重连才生效
+    pub fn set_config(&self, cfg: DeviceConfig) {
+        *self.shared.cfg.lock().unwrap() = cfg;
     }
 
-    pub fn profile(&self) -> SimProfile {
-        self.shared.profile.lock().unwrap().clone()
+    pub fn device_no(&self) -> String {
+        self.shared.cfg.lock().unwrap().device_no.clone()
+    }
+
+    pub fn connected(&self) -> bool {
+        self.shared.connected.load(Ordering::Relaxed)
+    }
+
+    /// 往该设备的日志里记一条系统提示
+    pub fn note(&self, text: impl Into<String>) {
+        self.shared.push(FrameLog::sys(text));
     }
 
     fn current_device_no(&self) -> String {
-        self.shared.device_no.lock().unwrap().clone()
+        self.device_no()
+    }
+
+    fn profile(&self) -> SimProfile {
+        self.shared.cfg.lock().unwrap().profile.clone()
     }
 
     pub async fn send_location(&self) -> Result<(), String> {
@@ -250,16 +284,12 @@ impl DeviceLink {
         std::mem::take(&mut *self.shared.buffer.lock().unwrap())
     }
 
-    pub async fn connect(
-        &self,
-        host: &str,
-        port: u16,
-        device_no: &str,
-        soft_version: &str,
-        heartbeat: bool,
-    ) -> Result<(), String> {
-        let host = host.trim();
-        let device_no = device_no.trim();
+    pub async fn connect(&self) -> Result<(), String> {
+        let cfg = self.config();
+        let (port, heartbeat) = (cfg.port, cfg.heartbeat);
+        let soft_version = cfg.soft_version.as_str();
+        let host = cfg.host.trim();
+        let device_no = cfg.device_no.trim();
         if host.is_empty() {
             return Err("网关地址不能为空".to_string());
         }
@@ -281,7 +311,6 @@ impl DeviceLink {
             *g
         };
         *self.shared.endpoint.lock().unwrap() = endpoint.clone();
-        *self.shared.device_no.lock().unwrap() = device_no.to_string();
         self.shared.connected.store(true, Ordering::Relaxed);
         *self.writer.lock().await = Some(write_half);
         self.shared.push(FrameLog::sys(format!("已连接 {endpoint}")));
@@ -328,11 +357,12 @@ impl DeviceLink {
                                     continue;
                                 };
                                 *shared.last_msg_id.lock().unwrap() = Some(msg_id.clone());
-                                if !shared.auto_reply.load(Ordering::Relaxed) {
+                                let cfg = shared.cfg();
+                                if !cfg.auto_reply {
                                     continue;
                                 }
                                 // 参数查询/设置各有专用应答，预还车要回一整套 TLV，其余回简单应答
-                                let profile = shared.profile.lock().unwrap().clone();
+                                let profile = cfg.profile;
                                 let ok = profile.reply_success;
                                 let command = parsed.as_ref().map(|p| p.command).unwrap_or(0);
                                 let params =
@@ -507,4 +537,61 @@ fn set_param_results(entries: &[String], ok: bool) -> Vec<(String, String)> {
             (key, if ok { "OK" } else { "FAIL" }.to_string())
         })
         .collect()
+}
+
+/// 多台模拟设备：按 deviceNo 索引，顺序就是界面上的列表顺序
+#[derive(Default)]
+pub struct DeviceFleet {
+    links: Mutex<Vec<Arc<DeviceLink>>>,
+}
+
+impl DeviceFleet {
+    pub fn seed(&self, configs: Vec<DeviceConfig>) {
+        for cfg in configs {
+            self.upsert(cfg);
+        }
+    }
+
+    pub fn upsert(&self, cfg: DeviceConfig) -> Arc<DeviceLink> {
+        let mut links = self.links.lock().unwrap();
+        match links.iter().find(|l| l.device_no() == cfg.device_no) {
+            Some(link) => {
+                link.set_config(cfg);
+                link.clone()
+            }
+            None => {
+                let link = Arc::new(DeviceLink::new(cfg));
+                links.push(link.clone());
+                link
+            }
+        }
+    }
+
+    pub fn get(&self, device_no: &str) -> Result<Arc<DeviceLink>, String> {
+        self.links
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|l| l.device_no() == device_no)
+            .cloned()
+            .ok_or_else(|| format!("设备 {device_no} 不在模拟清单里"))
+    }
+
+    pub fn remove(&self, device_no: &str) -> Option<Arc<DeviceLink>> {
+        let mut links = self.links.lock().unwrap();
+        let idx = links.iter().position(|l| l.device_no() == device_no)?;
+        Some(links.remove(idx))
+    }
+
+    pub fn list(&self) -> Vec<Arc<DeviceLink>> {
+        self.links.lock().unwrap().clone()
+    }
+
+    pub fn states(&self) -> Vec<DeviceState> {
+        self.list().iter().map(|l| l.state()).collect()
+    }
+
+    pub fn roster(&self) -> Vec<DeviceConfig> {
+        self.list().iter().map(|l| l.config()).collect()
+    }
 }

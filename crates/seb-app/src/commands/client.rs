@@ -1,7 +1,13 @@
 use super::AppState;
-use seb_core::device::{DeviceState, FrameLog, SimProfile, DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT};
+use seb_core::device::{
+    DeviceConfig, DeviceState, SimProfile, DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT,
+};
 use serde::Serialize;
+use std::time::Duration;
 use tauri::State;
+
+/// 批量操作时逐台错开，避免网关同一瞬间收到一堆登录
+const BATCH_GAP: Duration = Duration::from_millis(200);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,9 +40,18 @@ pub fn list_alarm_types() -> Vec<AlarmType> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ClientFrame {
+    pub device_no: String,
+    pub dir: String,
+    pub summary: String,
+    pub hex: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ClientPoll {
-    pub state: DeviceState,
-    pub frames: Vec<FrameLog>,
+    pub devices: Vec<DeviceState>,
+    pub frames: Vec<ClientFrame>,
 }
 
 #[tauri::command]
@@ -49,71 +64,163 @@ pub fn client_defaults() -> ClientDefaults {
     }
 }
 
-#[tauri::command]
-pub async fn client_connect(
-    state: State<'_, AppState>,
-    host: String,
-    port: u16,
-    device_no: String,
-    soft_version: String,
-    heartbeat: bool,
-) -> Result<DeviceState, String> {
-    state
-        .device
-        .connect(&host, port, &device_no, &soft_version, heartbeat)
-        .await?;
-    Ok(state.device.state())
+/// 设备清单跟着主配置一起落盘，重启后能恢复
+async fn persist(state: &AppState) {
+    let mut publisher = state.publisher.lock().await;
+    let mut cfg = publisher.config().clone();
+    cfg.sim_devices = state.devices.roster();
+    let _ = seb_core::config::save(&cfg);
+    publisher.set_config(cfg).await;
 }
 
 #[tauri::command]
-pub async fn client_disconnect(state: State<'_, AppState>) -> Result<DeviceState, String> {
-    state.device.disconnect().await;
-    Ok(state.device.state())
+pub fn client_devices(state: State<'_, AppState>) -> Vec<DeviceState> {
+    state.devices.states()
+}
+
+#[tauri::command]
+pub async fn client_update_device(
+    state: State<'_, AppState>,
+    config: DeviceConfig,
+) -> Result<Vec<DeviceState>, String> {
+    if config.device_no.trim().is_empty() {
+        return Err("中控设备序列号不能为空".to_string());
+    }
+    state.devices.upsert(config);
+    persist(&state).await;
+    Ok(state.devices.states())
+}
+
+#[tauri::command]
+pub async fn client_remove_device(
+    state: State<'_, AppState>,
+    device_no: String,
+) -> Result<Vec<DeviceState>, String> {
+    if let Some(link) = state.devices.remove(&device_no) {
+        link.disconnect().await;
+    }
+    persist(&state).await;
+    Ok(state.devices.states())
+}
+
+#[tauri::command]
+pub async fn client_connect(
+    state: State<'_, AppState>,
+    device_no: String,
+) -> Result<DeviceState, String> {
+    let link = state.devices.get(&device_no)?;
+    link.connect().await?;
+    Ok(link.state())
+}
+
+#[tauri::command]
+pub async fn client_disconnect(
+    state: State<'_, AppState>,
+    device_no: String,
+) -> Result<DeviceState, String> {
+    let link = state.devices.get(&device_no)?;
+    link.disconnect().await;
+    Ok(link.state())
+}
+
+#[tauri::command]
+pub async fn client_connect_all(state: State<'_, AppState>) -> Result<(), String> {
+    for link in state.devices.list() {
+        if link.connected() {
+            continue;
+        }
+        if let Err(e) = link.connect().await {
+            link.note(format!("连接失败: {e}"));
+        }
+        tokio::time::sleep(BATCH_GAP).await;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn client_disconnect_all(state: State<'_, AppState>) -> Result<(), String> {
+    for link in state.devices.list() {
+        link.disconnect().await;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn client_send_location_all(state: State<'_, AppState>) -> Result<(), String> {
+    for link in state.devices.list() {
+        if !link.connected() {
+            continue;
+        }
+        if let Err(e) = link.send_location().await {
+            link.note(format!("上报定位失败: {e}"));
+        }
+        tokio::time::sleep(BATCH_GAP).await;
+    }
+    Ok(())
 }
 
 #[tauri::command]
 pub fn client_poll(state: State<'_, AppState>) -> ClientPoll {
+    let mut frames = Vec::new();
+    for link in state.devices.list() {
+        let device_no = link.device_no();
+        for f in link.drain() {
+            frames.push(ClientFrame {
+                device_no: device_no.clone(),
+                dir: f.dir,
+                summary: f.summary,
+                hex: f.hex,
+            });
+        }
+    }
     ClientPoll {
-        state: state.device.state(),
-        frames: state.device.drain(),
+        devices: state.devices.states(),
+        frames,
     }
 }
 
 #[tauri::command]
-pub fn client_set_profile(state: State<'_, AppState>, profile: SimProfile, auto_reply: bool) {
-    state.device.set_profile(profile);
-    state.device.set_auto_reply(auto_reply);
+pub async fn client_send_location(
+    state: State<'_, AppState>,
+    device_no: String,
+) -> Result<(), String> {
+    state.devices.get(&device_no)?.send_location().await
 }
 
 #[tauri::command]
-pub async fn client_send_location(state: State<'_, AppState>) -> Result<(), String> {
-    state.device.send_location().await
-}
-
-#[tauri::command]
-pub async fn client_send_bms(state: State<'_, AppState>) -> Result<(), String> {
-    state.device.send_bms().await
+pub async fn client_send_bms(state: State<'_, AppState>, device_no: String) -> Result<(), String> {
+    state.devices.get(&device_no)?.send_bms().await
 }
 
 #[tauri::command]
 pub async fn client_send_alarm(
     state: State<'_, AppState>,
+    device_no: String,
     alarm_type: u8,
     label: String,
 ) -> Result<(), String> {
-    state.device.send_alarm(alarm_type, &label).await
+    state
+        .devices
+        .get(&device_no)?
+        .send_alarm(alarm_type, &label)
+        .await
 }
 
 #[tauri::command]
-pub async fn client_send_ping(state: State<'_, AppState>) -> Result<(), String> {
-    state.device.send_ping().await
+pub async fn client_send_ping(state: State<'_, AppState>, device_no: String) -> Result<(), String> {
+    state.devices.get(&device_no)?.send_ping().await
 }
 
 #[tauri::command]
 pub async fn client_send_reply(
     state: State<'_, AppState>,
+    device_no: String,
     msg_id: Option<String>,
     success: bool,
 ) -> Result<(), String> {
-    state.device.send_reply(msg_id, success).await
+    state
+        .devices
+        .get(&device_no)?
+        .send_reply(msg_id, success)
+        .await
 }

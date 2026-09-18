@@ -1,6 +1,6 @@
 use crate::state::{
     AlarmType, AppConfig, BikeDetail, BorrowOptions, ClientDefaults, ClientPoll, ConnState, ControlType,
-    DeployOptions, DeployResult, DeviceState, EcuParam, SendResult, SimProfile,
+    DeployOptions, DeployResult, DeviceConfig, DeviceState, EcuParam, SendResult,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -283,83 +283,100 @@ pub async fn list_alarm_types() -> Result<Vec<AlarmType>, String> {
     invoke("list_alarm_types", Empty {}).await
 }
 
-pub async fn client_connect(
-    host: &str,
-    port: u16,
-    device_no: &str,
-    soft_version: &str,
-    heartbeat: bool,
-) -> Result<DeviceState, String> {
-    #[derive(Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct A<'a> {
-        host: &'a str,
-        port: u16,
-        device_no: &'a str,
-        soft_version: &'a str,
-        heartbeat: bool,
-    }
-    invoke(
-        "client_connect",
-        A {
-            host,
-            port,
-            device_no,
-            soft_version,
-            heartbeat,
-        },
-    )
-    .await
+pub async fn client_devices() -> Result<Vec<DeviceState>, String> {
+    invoke("client_devices", Empty {}).await
 }
 
-pub async fn client_disconnect() -> Result<DeviceState, String> {
-    invoke("client_disconnect", Empty {}).await
+pub async fn client_update_device(config: DeviceConfig) -> Result<Vec<DeviceState>, String> {
+    #[derive(Serialize)]
+    struct A {
+        config: DeviceConfig,
+    }
+    invoke("client_update_device", A { config }).await
+}
+
+pub async fn client_remove_device(device_no: &str) -> Result<Vec<DeviceState>, String> {
+    invoke("client_remove_device", Device { device_no }).await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Device<'a> {
+    device_no: &'a str,
+}
+
+pub async fn client_connect(device_no: &str) -> Result<DeviceState, String> {
+    invoke("client_connect", Device { device_no }).await
+}
+
+pub async fn client_disconnect(device_no: &str) -> Result<DeviceState, String> {
+    invoke("client_disconnect", Device { device_no }).await
+}
+
+pub async fn client_connect_all() -> Result<(), String> {
+    invoke_void("client_connect_all", Empty {}).await
+}
+
+pub async fn client_disconnect_all() -> Result<(), String> {
+    invoke_void("client_disconnect_all", Empty {}).await
+}
+
+pub async fn client_send_location_all() -> Result<(), String> {
+    invoke_void("client_send_location_all", Empty {}).await
 }
 
 pub async fn client_poll() -> Result<ClientPoll, String> {
     invoke("client_poll", Empty {}).await
 }
 
-pub async fn client_set_profile(profile: SimProfile, auto_reply: bool) -> Result<(), String> {
+pub async fn client_send_location(device_no: String) -> Result<(), String> {
+    invoke_void("client_send_location", Device { device_no: &device_no }).await
+}
+
+pub async fn client_send_bms(device_no: String) -> Result<(), String> {
+    invoke_void("client_send_bms", Device { device_no: &device_no }).await
+}
+
+pub async fn client_send_ping(device_no: String) -> Result<(), String> {
+    invoke_void("client_send_ping", Device { device_no: &device_no }).await
+}
+
+pub async fn client_send_alarm(device_no: String, alarm_type: u8, label: String) -> Result<(), String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct A {
-        profile: SimProfile,
-        auto_reply: bool,
-    }
-    invoke_void("client_set_profile", A { profile, auto_reply }).await
-}
-
-pub async fn client_send_location() -> Result<(), String> {
-    invoke_void("client_send_location", Empty {}).await
-}
-
-pub async fn client_send_bms() -> Result<(), String> {
-    invoke_void("client_send_bms", Empty {}).await
-}
-
-pub async fn client_send_ping() -> Result<(), String> {
-    invoke_void("client_send_ping", Empty {}).await
-}
-
-pub async fn client_send_alarm(alarm_type: u8, label: &str) -> Result<(), String> {
-    #[derive(Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct A<'a> {
+        device_no: String,
         alarm_type: u8,
-        label: &'a str,
+        label: String,
     }
-    invoke_void("client_send_alarm", A { alarm_type, label }).await
+    invoke_void(
+        "client_send_alarm",
+        A {
+            device_no,
+            alarm_type,
+            label,
+        },
+    )
+    .await
 }
 
-pub async fn client_send_reply(success: bool) -> Result<(), String> {
+pub async fn client_send_reply(device_no: String, success: bool) -> Result<(), String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct A {
+        device_no: String,
         msg_id: Option<String>,
         success: bool,
     }
-    invoke_void("client_send_reply", A { msg_id: None, success }).await
+    invoke_void(
+        "client_send_reply",
+        A {
+            device_no,
+            msg_id: None,
+            success,
+        },
+    )
+    .await
 }
 
 pub async fn open_terminal_log(
