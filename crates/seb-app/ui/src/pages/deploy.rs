@@ -27,6 +27,7 @@ pub fn DeployPage() -> View {
     let has_trunk = create_signal(true);
     let loaded = create_signal(false);
     let busy = create_signal(false);
+    let busy_lookup = create_signal(false);
 
     let cities = create_memo(move || {
         let opts = ctx.deploy_options.get_clone();
@@ -177,12 +178,80 @@ pub fn DeployPage() -> View {
             ctx.log_warn("【警告】请先填写车辆编号 (bikeNo)");
             return;
         }
+        busy_lookup.set(true);
         spawn_local(async move {
             match api::bike_lookup(&bike_no).await {
-                Ok(s) if s.is_empty() => ctx.log_warn(format!("seb_goods_db.bike_tb 中没有 {bike_no}")),
-                Ok(s) => ctx.log_info(s),
+                Ok(None) => ctx.log_warn(format!("seb_goods_db.bike_tb 中未找到车辆 {bike_no}")),
+                Ok(Some(d)) => {
+                    // 1. 自动返显表单输入框
+                    if !d.ecu_no.is_empty() {
+                        ctx.device_no.set(d.ecu_no.clone());
+                    }
+                    if !d.battery_no.is_empty() {
+                        ctx.battery_no.set(d.battery_no.clone());
+                    }
+                    if !d.battery_pid.is_empty() {
+                        battery_pid.set(d.battery_pid.clone());
+                    }
+                    if d.city_id > 0 {
+                        ctx.city_id.set(d.city_id.to_string());
+                    }
+                    if d.bike_type_id > 0 {
+                        bike_type_id.set(d.bike_type_id.to_string());
+                    }
+                    if d.battery_type_id > 0 {
+                        battery_type_id.set(d.battery_type_id.to_string());
+                    }
+                    if d.supplier_id > 0 {
+                        supplier_id.set(d.supplier_id.to_string());
+                    }
+                    if d.dealer_id > 0 {
+                        dealer_id.set(d.dealer_id.to_string());
+                    }
+                    if d.device_company_id > 0 {
+                        device_company_id.set(d.device_company_id.to_string());
+                    }
+                    if !d.batch_no.is_empty() {
+                        batch_no.set(d.batch_no.clone());
+                    }
+                    if !d.motor_no.is_empty() {
+                        motor_no.set(d.motor_no.clone());
+                    }
+                    if !d.frame_no.is_empty() {
+                        frame_no.set(d.frame_no.clone());
+                    }
+                    has_helmet.set(d.has_helmet);
+                    has_trunk.set(d.has_trunk);
+
+                    // 2. 保存至本地配置以便跨页面同步
+                    let mut cfg = ctx.current_config();
+                    cfg.device_no = d.ecu_no.clone();
+                    cfg.battery_no = d.battery_no.clone();
+                    cfg.city_id = d.city_id;
+                    cfg.deploy.bike_type_id = d.bike_type_id;
+                    cfg.deploy.battery_type_id = d.battery_type_id;
+                    cfg.deploy.supplier_id = d.supplier_id;
+                    cfg.deploy.dealer_id = d.dealer_id;
+                    cfg.deploy.device_company_id = d.device_company_id;
+                    cfg.deploy.has_helmet = d.has_helmet;
+                    cfg.deploy.has_trunk = d.has_trunk;
+                    let _ = api::save_config(&cfg).await;
+                    ctx.cfg.set(cfg);
+
+                    // 3. 日志打印详细结果
+                    let bat_str = if d.battery_no.is_empty() {
+                        "未绑定".to_string()
+                    } else {
+                        d.battery_no
+                    };
+                    ctx.log_info(format!(
+                        "ecuNo={}, batteryNo={}, cityId={}, 投放状态={}, 业务状态={}, 已删除=0, 设备状态={}",
+                        d.ecu_no, bat_str, d.city_id, d.road_status, d.business_status, d.online_status
+                    ));
+                }
                 Err(e) => ctx.log_error(format!("【错误】{e}")),
             }
+            busy_lookup.set(false);
         });
     };
 
@@ -259,12 +328,17 @@ pub fn DeployPage() -> View {
                         }
                     }
                 }
+                div(class="card-actions") {
+                    button(disabled=busy_lookup.get(), on:click=lookup) {
+                        (if busy_lookup.get() { "查询中…" } else { "查询车辆状态" })
+                    }
+                }
             }
 
             div(class="section") {
                 div(class="section-title") {
                     "车辆与硬件配置"
-                    span(class="tag") { "选填 / 默认参数" }
+                    span(class="tag") { "选填" }
                 }
                 div(class="grid grid-3") {
                     div(class="field") {
@@ -379,7 +453,6 @@ pub fn DeployPage() -> View {
                     button(class="primary", disabled=busy.get(), on:click=deploy) {
                         (if busy.get() { "接入中…" } else { "一键接入" })
                     }
-                    button(on:click=lookup) { "查询车辆状态" }
                 }
             }
         }

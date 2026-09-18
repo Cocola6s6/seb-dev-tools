@@ -12,22 +12,29 @@ pub fn EcuPage() -> View {
     let keyword = create_signal(String::new());
     let param_key = create_signal(String::new());
     let param_value = create_signal(String::new());
+    let open = create_signal(false);
 
+    // 输入框既是参数项也是搜索框：没选中时按输入过滤，选中后只列同名项
     let filtered = create_memo(move || {
         let kw = keyword.get_clone();
         ctx.ecu_params
             .get_clone()
             .into_iter()
             .filter(|p| p.matches(&kw))
+            .take(80)
             .collect::<Vec<EcuParam>>()
     });
 
+    // 输入正好命中某个参数名就直接选中，省得再点一次列表
     create_effect(move || {
-        let list = filtered.get_clone();
-        let current = param_key.get_clone();
-        if list.iter().all(|p| p.key != current) {
-            param_key.set(list.first().map(|p| p.key.clone()).unwrap_or_default());
-        }
+        let kw = keyword.get_clone().trim().to_uppercase();
+        let hit = ctx
+            .ecu_params
+            .get_clone()
+            .into_iter()
+            .find(|p| p.key.to_uppercase() == kw)
+            .map(|p| p.key);
+        param_key.set(hit.unwrap_or_default());
     });
 
     let description = create_memo(move || {
@@ -59,7 +66,7 @@ pub fn EcuPage() -> View {
     let submit = move |_| {
         let key = param_key.get_clone().trim().to_string();
         if key.is_empty() {
-            ctx.log_warn("【警告】请选择要操作的 ECU 参数项");
+            ctx.log_warn("【警告】请先从列表里选中一个参数项");
             return;
         }
         if op_mode.get_clone() == "查询" {
@@ -91,9 +98,39 @@ pub fn EcuPage() -> View {
                             option(value="设置", selected=op_mode.get_clone() == "设置") { "设置" }
                         }
                     }
-                    div(class="field") {
-                        label { "筛选（参数名 / 中文名）" }
-                        input(r#type="text", placeholder="如 HELMET 或 头盔", bind:value=keyword)
+                    div(class="field combo") {
+                        label { (format!("参数项（{} 项可选）", filtered.get_clone().len())) }
+                        input(
+                            r#type="text",
+                            placeholder="输入参数名或中文名，如 HELMET / 头盔",
+                            bind:value=keyword,
+                            on:focus=move |_| open.set(true),
+                            on:blur=move |_| open.set(false),
+                        )
+                        (if open.get() {
+                            view! {
+                                div(class="combo-list", on:mousedown=move |ev: web_sys::MouseEvent| ev.prevent_default()) {
+                                    Indexed(
+                                        list=filtered,
+                                        view=move |p: EcuParam| {
+                                            let key = p.key.clone();
+                                            let pick = move |_| {
+                                                keyword.set(key.clone());
+                                                open.set(false);
+                                            };
+                                            view! {
+                                                div(class="combo-item", on:click=pick) {
+                                                    span(class="k") { (p.key) }
+                                                    span(class="n") { (p.name) }
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        } else {
+                            view! {}
+                        })
                     }
                     div(class="field") {
                         label { "参数值" }
@@ -106,26 +143,9 @@ pub fn EcuPage() -> View {
                     }
                 }
 
-                div(class="field", style="margin-top:10px") {
-                    label { (format!("参数项（共 {} 项）", filtered.get_clone().len())) }
-                    select(on:change=move |ev| param_key.set(select_value(ev))) {
-                        Indexed(
-                            list=filtered,
-                            view=move |p: EcuParam| {
-                                let is_selected = param_key.get_clone() == p.key;
-                                let value = p.key.clone();
-                                let text = format!("{}  —  {}", p.key, p.name);
-                                view! {
-                                    option(value=value, selected=is_selected) { (text) }
-                                }
-                            }
-                        )
-                    }
-                }
+                div(class="hint", style="margin-top:10px") { (description.get_clone()) }
 
-                div(class="hint", style="margin-top:6px") { (description.get_clone()) }
-
-                div(class="row", style="margin-top:10px") {
+                div(class="row", style="margin-top:18px") {
                     button(class="primary", on:click=submit) {
                         (if op_mode.get_clone() == "查询" { "发送查询" } else { "发送设置" })
                     }

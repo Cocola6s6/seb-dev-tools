@@ -1,4 +1,4 @@
-use seb_core::db::{self, DeployOptions, DeployRequest, DeployResult};
+use seb_core::db::{self, BikeDetail, DeployOptions, DeployRequest, DeployResult};
 
 #[tauri::command]
 pub async fn load_deploy_options() -> DeployOptions {
@@ -44,12 +44,10 @@ pub async fn bike_deploy(
 }
 
 #[tauri::command]
-pub async fn bike_lookup(bike_no: String) -> Result<String, String> {
+pub async fn bike_lookup(bike_no: String) -> Result<Option<BikeDetail>, String> {
     let bike_no = bike_no.trim().to_string();
     if bike_no.is_empty() {
         return Err("车辆编号 (bikeNo) 不能为空".to_string());
     }
-    Ok(db::find_bike(&seb_core::config::mysql(), &bike_no)
-        .await?
-        .unwrap_or_default())
+    db::find_bike(&seb_core::config::mysql(), &bike_no).await
 }

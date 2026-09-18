@@ -1,0 +1,221 @@
+use crate::actions::run_client;
+use crate::api;
+use crate::components::{select_value, Check, Field, MapPickerModal};
+use crate::state::{AlarmType, AppCtx, LogLevel};
+use gloo_timers::future::TimeoutFuture;
+use sycamore::prelude::*;
+use wasm_bindgen_futures::spawn_local;
+
+const VEHICLE_STATES: &[(&str, &str)] = &[
+    ("0", "借车"),
+    ("1", "还车"),
+    ("2", "撤防"),
+    ("3", "运输模式"),
+];
+
+#[component]
+pub fn ClientPage() -> View {
+    let ctx = use_context::<AppCtx>();
+    let c = ctx.client;
+    let map_picker_open = create_signal(false);
+
+    // 表单任一项变动就把姿态同步给后台，应答/上报时直接取用
+    create_effect(move || {
+        let profile = c.profile(ctx.battery_no.get_clone().trim().to_string());
+        let auto_reply = c.auto_reply.get();
+        run_client(ctx, async move {
+            api::client_set_profile(profile, auto_reply).await
+        });
+    });
+
+    let connect = move |_| {
+        let host = c.host.get_clone().trim().to_string();
+        let port = c.port.get_clone().trim().parse::<u16>().unwrap_or(0);
+        let device_no = ctx.device_no.get_clone().trim().to_string();
+        let soft_version = c.soft_version.get_clone();
+        let heartbeat = c.heartbeat.get();
+        if port == 0 {
+            ctx.log_client("【警告】网关端口不合法", LogLevel::Warn);
+            return;
+        }
+        spawn_local(async move {
+            match api::client_connect(&host, port, &device_no, &soft_version, heartbeat).await {
+                Ok(st) => {
+                    ctx.log_client(format!("中控客户端已连接 {}", st.endpoint), LogLevel::Info);
+                    c.state.set(st);
+                    // 登录后网关才会写 ecu:instance:id，实例号变了不刷新的话指令会投到旧实例
+                    TimeoutFuture::new(1000).await;
+                    ctx.refresh_instance(false);
+                }
+                Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+            }
+        });
+    };
+
+    let disconnect = move |_| {
+        spawn_local(async move {
+            match api::client_disconnect().await {
+                Ok(st) => c.state.set(st),
+                Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+            }
+        });
+    };
+
+    let send_alarm = move |_| {
+        let code = c.alarm_type.get_clone();
+        match c
+            .alarm_types
+            .get_clone()
+            .into_iter()
+            .find(|a| a.code.to_string() == code)
+        {
+            Some(a) => run_client(ctx, async move { api::client_send_alarm(a.code, &a.name).await }),
+            None => ctx.log_client("【警告】请先选择告警类型", LogLevel::Warn),
+        }
+    };
+
+    view! {
+        div {
+            div(class="page-head") {
+                div(class="page-title") { "中控客户端" }
+                div(class="page-desc") {
+                    "以中控设备的身份连上 IoT 网关：收到的下发报文会进日志，可自动或手动回应答。"
+                }
+            }
+
+            div(class="section") {
+                div(class="section-title") { "网关连接" }
+                div(class="grid grid-3") {
+                    div(class="field") {
+                        label {
+                            span { "网关地址" }
+                            span(class="help") {
+                                "?"
+                                span(class="tip") {
+                                    div { "内网 bike-seb-inner-test.costrip.cn:32405" }
+                                    div { "外网 bike-seb-test.costrip.cn:8514" }
+                                    div { "正式 bike-seb.costrip.cn:8514" }
+                                }
+                            }
+                        }
+                        input(r#type="text", bind:value=c.host)
+                    }
+                    Field(label="端口", value=c.port)
+                    div(class="field") {
+                        label { "中控设备序列号 (DeviceNo)" }
+                        input(r#type="text", placeholder="799497080", bind:value=ctx.device_no)
+                    }
+                }
+                div(class="field", style="margin-top:14px") {
+                    label { "软件版本号" }
+                    input(r#type="text", bind:value=c.soft_version)
+                }
+                div(class="card-actions") {
+                    button(class="primary", on:click=connect) { "连接并登录" }
+                    button(on:click=disconnect) { "断开" }
+                    span(class="spacer") {}
+                    Check(label="60 秒心跳", checked=c.heartbeat)
+                }
+            }
+
+            div(class="section") {
+                div(class="section-title") { "车辆姿态" }
+                div(class="grid grid-3") {
+                    div(class="field") {
+                        label { "坐标" }
+                        div(class="field-inline") {
+                            input(
+                                r#type="text",
+                                placeholder="如 108.367035,22.756302",
+                                bind:value=c.coordinates,
+                                on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                    if ev.key() == "Tab" && !ev.shift_key() && c.coordinates.get_clone().trim().is_empty() {
+                                        c.coordinates.set("108.367035,22.756302".to_string());
+                                    }
+                                }
+                            )
+                            button(
+                                class="icon-btn",
+                                title="选择地图坐标",
+                                on:click=move |_| map_picker_open.set(true)
+                            ) {
+                                svg(viewBox="0 0 24 24", width="16", height="16", fill="currentColor") {
+                                    path(d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z") {}
+                                }
+                            }
+                        }
+                    }
+                    div(class="field") {
+                        label { "车辆状态" }
+                        select(on:change=move |ev| c.vehicle_state.set(select_value(ev))) {
+                            Indexed(
+                                list=VEHICLE_STATES.to_vec(),
+                                view=move |(value, label): (&'static str, &'static str)| {
+                                    let selected = c.vehicle_state.get_clone() == value;
+                                    view! { option(value=value, selected=selected) { (label) } }
+                                }
+                            )
+                        }
+                    }
+                    Field(label="电量 SOC", value=c.soc)
+                    Field(label="速度", value=c.speed)
+                    Field(label="预还车偏向角", value=c.deflection_angle)
+                }
+                div(class="row checks", style="margin-top:14px") {
+                    Check(label="运动中", checked=c.motion)
+                    Check(label="头盔锁已解锁", checked=c.helmet_lock_unlocked)
+                    Check(label="头盔在位", checked=c.helmet_present)
+                    Check(label="尾箱在位", checked=c.trunk_latch)
+                    Check(label="ACC 供电", checked=c.acc_on)
+                }
+                div(class="card-actions") {
+                    button(class="primary", on:click=move |_| run_client(ctx, api::client_send_location())) { "上报定位" }
+                    button(on:click=move |_| run_client(ctx, api::client_send_bms())) { "上报 BMS" }
+                }
+            }
+
+            div(class="section") {
+                div(class="section-title") { "指令应答" }
+                div(class="row checks") {
+                    Check(label="自动应答", checked=c.auto_reply)
+                    Check(label="应答结果为成功", checked=c.reply_success)
+                    Check(label="应答后补发定位", checked=c.reply_with_location)
+                }
+                div(class="hint", style="margin-top:12px") {
+                    (move || match c.state.get_clone().last_msg_id {
+                        Some(id) => format!("最近收到的 msgId: {id}"),
+                        None => "尚未收到下发指令".to_string(),
+                    })
+                }
+                div(class="card-actions") {
+                    button(on:click=move |_| run_client(ctx, api::client_send_reply(true))) { "手动回成功" }
+                    button(on:click=move |_| run_client(ctx, api::client_send_reply(false))) { "手动回失败" }
+                }
+            }
+
+            div(class="section") {
+                div(class="section-title") { "告警与心跳" }
+                div(class="field") {
+                    label { "告警类型" }
+                    select(class="w-lg", on:change=move |ev| c.alarm_type.set(select_value(ev))) {
+                        Indexed(
+                            list=c.alarm_types,
+                            view=move |a: AlarmType| {
+                                let value = a.code.to_string();
+                                let selected = c.alarm_type.get_clone() == value;
+                                let text = format!("{}  ({})", a.name, a.hex);
+                                view! { option(value=value, selected=selected) { (text) } }
+                            }
+                        )
+                    }
+                }
+                div(class="card-actions") {
+                    button(class="primary", on:click=send_alarm) { "上报告警" }
+                    button(on:click=move |_| run_client(ctx, api::client_send_ping())) { "发心跳" }
+                }
+            }
+
+            MapPickerModal(open=map_picker_open, target_coord=c.coordinates)
+        }
+    }
+}

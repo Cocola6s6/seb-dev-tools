@@ -1,6 +1,6 @@
 use crate::state::{
-    AppConfig, BorrowOptions, ConnState, ControlType, DeployOptions, DeployResult, EcuParam,
-    SendResult,
+    AlarmType, AppConfig, BikeDetail, BorrowOptions, ClientDefaults, ClientPoll, ConnState, ControlType,
+    DeployOptions, DeployResult, DeviceState, EcuParam, SendResult, SimProfile,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -14,12 +14,40 @@ export function tauri_invoke(cmd, args) {
 export function copy_text(text) {
     return navigator.clipboard.writeText(text);
 }
+
+export function js_init_map_picker(container_id, initial_coord, callback) {
+    if (window.initMapPicker) {
+        window.initMapPicker(container_id, initial_coord, callback);
+    }
+}
+
+export function js_jump_map_coord(lng, lat) {
+    if (window.jumpMapCoord) {
+        window.jumpMapCoord(lng, lat);
+    }
+}
+
+export function js_locate_current_position(callback) {
+    if (window.locateCurrentPosition) {
+        window.locateCurrentPosition(callback);
+    }
+}
+
+export function js_start_log_resize(on_resize, on_end) {
+    if (window.startLogResize) {
+        window.startLogResize(on_resize, on_end);
+    }
+}
 "###)]
 extern "C" {
     #[wasm_bindgen(catch)]
     fn tauri_invoke(cmd: &str, args: JsValue) -> Result<js_sys::Promise, JsValue>;
     #[wasm_bindgen(catch)]
     fn copy_text(text: &str) -> Result<js_sys::Promise, JsValue>;
+    fn js_init_map_picker(container_id: &str, initial_coord: &str, callback: &js_sys::Function);
+    fn js_jump_map_coord(lng: f64, lat: f64);
+    fn js_locate_current_position(callback: &js_sys::Function);
+    fn js_start_log_resize(on_resize: &js_sys::Function, on_end: &js_sys::Function);
 }
 
 #[derive(Serialize)]
@@ -50,6 +78,38 @@ pub async fn copy_to_clipboard(text: &str) -> Result<(), String> {
     let promise = copy_text(text).map_err(js_err)?;
     JsFuture::from(promise).await.map_err(js_err)?;
     Ok(())
+}
+
+pub fn init_map_picker(container_id: &str, initial_coord: &str, on_pick: impl Fn(String) + 'static) {
+    let cb = Closure::wrap(Box::new(move |coord: String| {
+        on_pick(coord);
+    }) as Box<dyn Fn(String)>);
+    js_init_map_picker(container_id, initial_coord, cb.as_ref().unchecked_ref());
+    cb.forget();
+}
+
+pub fn jump_map_coord(lng: f64, lat: f64) {
+    js_jump_map_coord(lng, lat);
+}
+
+pub fn locate_current_position(on_success: impl Fn(String) + 'static) {
+    let cb = Closure::wrap(Box::new(move |coord: String| {
+        on_success(coord);
+    }) as Box<dyn Fn(String)>);
+    js_locate_current_position(cb.as_ref().unchecked_ref());
+    cb.forget();
+}
+
+pub fn start_log_resize(on_resize: impl Fn(f64) + 'static, on_end: impl Fn() + 'static) {
+    let cb_resize = Closure::wrap(Box::new(move |h: f64| {
+        on_resize(h);
+    }) as Box<dyn Fn(f64)>);
+    let cb_end = Closure::wrap(Box::new(move || {
+        on_end();
+    }) as Box<dyn Fn()>);
+    js_start_log_resize(cb_resize.as_ref().unchecked_ref(), cb_end.as_ref().unchecked_ref());
+    cb_resize.forget();
+    cb_end.forget();
 }
 
 pub async fn get_config() -> Result<AppConfig, String> {
@@ -140,7 +200,7 @@ pub async fn bike_deploy(
     .await
 }
 
-pub async fn bike_lookup(bike_no: &str) -> Result<String, String> {
+pub async fn bike_lookup(bike_no: &str) -> Result<Option<BikeDetail>, String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct A<'a> {
@@ -213,4 +273,104 @@ pub async fn send_preset(preset: &str) -> Result<SendResult, String> {
         preset: &'a str,
     }
     invoke("send_preset", A { preset }).await
+}
+
+pub async fn client_defaults() -> Result<ClientDefaults, String> {
+    invoke("client_defaults", Empty {}).await
+}
+
+pub async fn list_alarm_types() -> Result<Vec<AlarmType>, String> {
+    invoke("list_alarm_types", Empty {}).await
+}
+
+pub async fn client_connect(
+    host: &str,
+    port: u16,
+    device_no: &str,
+    soft_version: &str,
+    heartbeat: bool,
+) -> Result<DeviceState, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct A<'a> {
+        host: &'a str,
+        port: u16,
+        device_no: &'a str,
+        soft_version: &'a str,
+        heartbeat: bool,
+    }
+    invoke(
+        "client_connect",
+        A {
+            host,
+            port,
+            device_no,
+            soft_version,
+            heartbeat,
+        },
+    )
+    .await
+}
+
+pub async fn client_disconnect() -> Result<DeviceState, String> {
+    invoke("client_disconnect", Empty {}).await
+}
+
+pub async fn client_poll() -> Result<ClientPoll, String> {
+    invoke("client_poll", Empty {}).await
+}
+
+pub async fn client_set_profile(profile: SimProfile, auto_reply: bool) -> Result<(), String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct A {
+        profile: SimProfile,
+        auto_reply: bool,
+    }
+    invoke_void("client_set_profile", A { profile, auto_reply }).await
+}
+
+pub async fn client_send_location() -> Result<(), String> {
+    invoke_void("client_send_location", Empty {}).await
+}
+
+pub async fn client_send_bms() -> Result<(), String> {
+    invoke_void("client_send_bms", Empty {}).await
+}
+
+pub async fn client_send_ping() -> Result<(), String> {
+    invoke_void("client_send_ping", Empty {}).await
+}
+
+pub async fn client_send_alarm(alarm_type: u8, label: &str) -> Result<(), String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct A<'a> {
+        alarm_type: u8,
+        label: &'a str,
+    }
+    invoke_void("client_send_alarm", A { alarm_type, label }).await
+}
+
+pub async fn client_send_reply(success: bool) -> Result<(), String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct A {
+        msg_id: Option<String>,
+        success: bool,
+    }
+    invoke_void("client_send_reply", A { msg_id: None, success }).await
+}
+
+pub async fn open_terminal_log(
+    device_no: Option<String>,
+    bike_no: Option<String>,
+) -> Result<String, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct A {
+        device_no: Option<String>,
+        bike_no: Option<String>,
+    }
+    invoke("open_terminal_log", A { device_no, bike_no }).await
 }

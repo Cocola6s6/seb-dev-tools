@@ -68,57 +68,122 @@ pub async fn check_health(cfg: &MysqlConfig) -> Result<bool, String> {
     Ok(true)
 }
 
-pub async fn check(cfg: &MysqlConfig) -> Result<String, String> {
-    let pool = create_pool(cfg).await?;
-    let bikes: i64 = sqlx::query("select count(*) from bike_tb where deleted = 0")
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| format!("读取 bike_tb 失败: {e}"))?
-        .get(0);
-    let queued: i64 = sqlx::query("select count(*) from bike_ecu_relation_queue_tb where executed = 0")
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| format!("读取 bike_ecu_relation_queue_tb 失败: {e}"))?
-        .get(0);
-    pool.close().await;
-    Ok(format!(
-        "{}:{}/{} 连接正常：bike_tb {} 条（未删除），待执行绑定队列 {} 条",
-        cfg.host, cfg.port, cfg.database, bikes, queued
-    ))
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BikeDetail {
+    pub bike_no: String,
+    pub ecu_no: String,
+    pub battery_no: String,
+    pub battery_pid: String,
+    pub battery_type_id: i64,
+    pub city_id: i64,
+    pub bike_type_id: i64,
+    pub supplier_id: i64,
+    pub dealer_id: i64,
+    pub device_company_id: i64,
+    pub batch_no: String,
+    pub motor_no: String,
+    pub frame_no: String,
+    pub has_helmet: bool,
+    pub has_trunk: bool,
+    pub road_status: String,
+    pub business_status: String,
+    pub online_status: String,
 }
 
-pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<String>, String> {
+pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<BikeDetail>, String> {
     let pool = create_pool(cfg).await?;
     let row = sqlx::query(
-        "select ecu_no, city_id, road_status, business_status, deleted \
+        "select ecu_no, city_id, bike_type_id, supplier_id, dealer_id, device_company_id, \
+         batch_no, motor_no, frame_no, has_helmet, has_trunk, road_status, business_status \
          from bike_tb where bike_no = ? and deleted = 0 limit 1",
     )
     .bind(bike_no)
     .fetch_optional(&pool)
     .await
     .map_err(|e| format!("查询 bike_tb 失败: {e}"))?;
-    pool.close().await;
 
     let Some(r) = row else {
+        pool.close().await;
         return Ok(None);
     };
 
-    let ecu_no = r.get::<String, _>("ecu_no");
-    let city_id = r.get::<i32, _>("city_id");
-    let road_status = r.get::<String, _>("road_status");
-    let business_status = r.get::<String, _>("business_status");
-    let deleted = r.get::<i8, _>("deleted");
+    let ecu_no = r.try_get::<String, _>("ecu_no").unwrap_or_default();
+    let city_id = r.try_get::<i32, _>("city_id").unwrap_or(0) as i64;
+    let bike_type_id = r.try_get::<i32, _>("bike_type_id").unwrap_or(0) as i64;
+    let supplier_id = r.try_get::<i32, _>("supplier_id").unwrap_or(0) as i64;
+    let dealer_id = r.try_get::<i32, _>("dealer_id").unwrap_or(0) as i64;
+    let device_company_id = r.try_get::<i32, _>("device_company_id").unwrap_or(0) as i64;
+    let batch_no = r.try_get::<String, _>("batch_no").unwrap_or_default();
+    let motor_no = r.try_get::<String, _>("motor_no").unwrap_or_default();
+    let frame_no = r.try_get::<String, _>("frame_no").unwrap_or_default();
+    let has_helmet = r.try_get::<i8, _>("has_helmet").unwrap_or(0) != 0;
+    let has_trunk = r.try_get::<i8, _>("has_trunk").unwrap_or(0) != 0;
+    let road_status = r.try_get::<String, _>("road_status").unwrap_or_default();
+    let business_status = r.try_get::<String, _>("business_status").unwrap_or_default();
 
+    // 关联查询当前绑定的电池编号
+    let bat_row = sqlx::query(
+        "select battery_no from bike_battery_tb where bike_no = ? limit 1",
+    )
+    .bind(bike_no)
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten();
+
+    let battery_no = bat_row
+        .and_then(|br| br.try_get::<String, _>("battery_no").ok())
+        .unwrap_or_default();
+
+    // 如果有电池编号，进一步查询电池资产详情 (battery_pid, battery_type_id)
+    let (battery_pid, battery_type_id) = if !battery_no.is_empty() {
+        if let Ok(Some(btr)) = sqlx::query(
+            "select battery_pid, battery_type_id from battery_tb where battery_no = ? limit 1",
+        )
+        .bind(&battery_no)
+        .fetch_optional(&pool)
+        .await
+        {
+            let pid = btr.try_get::<String, _>("battery_pid").unwrap_or_else(|_| battery_no.clone());
+            let btid = btr.try_get::<i32, _>("battery_type_id").unwrap_or(0) as i64;
+            (pid, btid)
+        } else {
+            (battery_no.clone(), 0)
+        }
+    } else {
+        (String::new(), 0)
+    };
+
+    pool.close().await;
+
+    // 查询 Redis 中控在线状态
     let redis_instance = crate::redis::instance_of(&ecu_no).await.unwrap_or(None);
-    let online_str = match redis_instance {
+    let online_status = match redis_instance {
         Some(inst) => format!("在线 (实例 {inst})"),
         None => "未上线/无心跳".to_string(),
     };
 
-    Ok(Some(format!(
-        "ecuNo={}, cityId={}, 投放状态={}, 业务状态={}, 已删除={}, 设备状态={}",
-        ecu_no, city_id, road_status, business_status, deleted, online_str
-    )))
+    Ok(Some(BikeDetail {
+        bike_no: bike_no.to_string(),
+        ecu_no,
+        battery_no,
+        battery_pid,
+        battery_type_id,
+        city_id,
+        bike_type_id,
+        supplier_id,
+        dealer_id,
+        device_company_id,
+        batch_no,
+        motor_no,
+        frame_no,
+        has_helmet,
+        has_trunk,
+        road_status,
+        business_status,
+        online_status,
+    }))
 }
 
 pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResult, String> {

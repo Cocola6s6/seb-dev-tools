@@ -1,28 +1,28 @@
+use seb_core::device::DeviceLink;
 use seb_core::mq::PublishRecord;
 use seb_core::{AppConfig, Publisher};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+pub mod client;
 pub mod config;
 pub mod deploy;
 pub mod ecu;
 pub mod instance;
 pub mod send;
+pub mod terminal;
 
 pub struct AppState {
     pub publisher: Mutex<Publisher>,
+    pub device: DeviceLink,
 }
 
 impl AppState {
     pub fn new(cfg: AppConfig) -> Self {
         Self {
             publisher: Mutex::new(Publisher::new(cfg)),
+            device: DeviceLink::new(),
         }
-    }
-
-    #[allow(dead_code)]
-    pub async fn config(&self) -> AppConfig {
-        self.publisher.lock().await.config().clone()
     }
 }
 

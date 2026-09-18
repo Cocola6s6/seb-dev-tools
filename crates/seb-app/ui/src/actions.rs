@@ -1,7 +1,18 @@
 use crate::api;
-use crate::state::{AppCtx, SendResult};
+use crate::state::{AppCtx, LogLevel, SendResult};
 use std::future::Future;
 use wasm_bindgen_futures::spawn_local;
+
+pub fn run_client<F>(ctx: AppCtx, fut: F)
+where
+    F: Future<Output = Result<(), String>> + 'static,
+{
+    spawn_local(async move {
+        if let Err(e) = fut.await {
+            ctx.log_client(format!("【错误】{e}"), LogLevel::Error);
+        }
+    });
+}
 
 pub fn run_send<F>(ctx: AppCtx, fut: F)
 where

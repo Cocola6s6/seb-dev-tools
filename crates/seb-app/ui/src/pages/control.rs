@@ -75,7 +75,7 @@ pub fn ControlPage() -> View {
             DeviceBar {}
 
             div(class="section") {
-                div(class="section-title") { "借车参数（安全骑行与硬件）" }
+                div(class="section-title") { "借车参数（安全骑行条件）" }
                 div(class="row checks") {
                     Check(label="开头盔锁", checked=open_helmet_lock)
                     Check(label="开尾箱锁", checked=open_trunk_lock)
@@ -83,12 +83,9 @@ pub fn ControlPage() -> View {
                     Check(label="戴头盔上电", checked=helmet_worn)
                     Check(label="关尾箱上电", checked=trunk_lock_close)
                 }
-                div(class="row", style="margin-top:10px") {
+                div(class="row", style="margin-top:18px") {
                     button(class="primary", on:click=borrow) { "借车" }
                     button(on:click=move |_| run_send(ctx, api::send_control(0x01, "还车"))) { "还车" }
-                }
-                div(class="hint", style="margin-top:6px") {
-                    "任一勾选即 safetyRiding = true；未勾选时下发传统借车流程。"
                 }
             }
 
@@ -130,7 +127,7 @@ pub fn ControlPage() -> View {
             div(class="section") {
                 div(class="section-title") { "语音播报" }
                 div(class="row") {
-                    input(r#type="number", min="0", max="255", bind:value=voice_id, class="w-sm")
+                    input(r#type="number", min="0", max="255", placeholder="语音编号 (0-255)", bind:value=voice_id, class="w-lg")
                     button(class="primary", on:click=send_voice) { "发送语音" }
                 }
             }

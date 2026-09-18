@@ -62,6 +62,29 @@ pub struct DeployResult {
     pub endpoint: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BikeDetail {
+    pub bike_no: String,
+    pub ecu_no: String,
+    pub battery_no: String,
+    pub battery_pid: String,
+    pub battery_type_id: i64,
+    pub city_id: i64,
+    pub bike_type_id: i64,
+    pub supplier_id: i64,
+    pub dealer_id: i64,
+    pub device_company_id: i64,
+    pub batch_no: String,
+    pub motor_no: String,
+    pub frame_no: String,
+    pub has_helmet: bool,
+    pub has_trunk: bool,
+    pub road_status: String,
+    pub business_status: String,
+    pub online_status: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EcuParam {
@@ -151,6 +174,9 @@ pub struct LogEntry {
     pub ts: String,
     pub text: String,
     pub level: LogLevel,
+    pub tint: &'static str,
+    /// 收发报文才有：Some("up") 上行、Some("down") 下行
+    pub dir: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -158,14 +184,182 @@ pub enum Page {
     Deploy,
     Control,
     Ecu,
+    Client,
 }
 
 impl Page {
+    pub fn index(self) -> usize {
+        match self {
+            Page::Deploy => 0,
+            Page::Control => 1,
+            Page::Ecu => 2,
+            Page::Client => 3,
+        }
+    }
+
     pub fn tint(self) -> &'static str {
         match self {
             Page::Deploy => "deploy",
             Page::Control => "control",
             Page::Ecu => "ecu",
+            Page::Client => "client",
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SimProfile {
+    pub coordinates: String,
+    pub vehicle_state: u8,
+    pub motion: bool,
+    pub soc: u8,
+    pub speed: u16,
+    pub helmet_lock_unlocked: bool,
+    pub helmet_present: bool,
+    pub trunk_latch: bool,
+    pub acc_on: bool,
+    pub deflection_angle: f64,
+    pub battery_no: String,
+    pub reply_success: bool,
+    pub reply_with_location: bool,
+}
+
+impl Default for SimProfile {
+    fn default() -> Self {
+        Self {
+            coordinates: "116.29721053978871,40.05213174125153".into(),
+            vehicle_state: 0,
+            motion: false,
+            soc: 80,
+            speed: 0,
+            helmet_lock_unlocked: false,
+            helmet_present: true,
+            trunk_latch: true,
+            acc_on: true,
+            deflection_angle: 5.0,
+            battery_no: String::new(),
+            reply_success: true,
+            reply_with_location: true,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DeviceState {
+    pub connected: bool,
+    pub endpoint: String,
+    pub device_no: String,
+    pub auto_reply: bool,
+    pub last_msg_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameLog {
+    pub dir: String,
+    pub summary: String,
+    pub hex: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AlarmType {
+    pub name: String,
+    pub code: u8,
+    pub hex: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientDefaults {
+    pub host: String,
+    pub port: u16,
+    pub soft_version: String,
+    pub profile: SimProfile,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientPoll {
+    pub state: DeviceState,
+    pub frames: Vec<FrameLog>,
+}
+
+/// 客户端页面的表单状态放在全局，切页后回来不会丢。
+#[derive(Clone, Copy)]
+pub struct ClientCtx {
+    pub host: Signal<String>,
+    pub port: Signal<String>,
+    pub soft_version: Signal<String>,
+    pub heartbeat: Signal<bool>,
+    pub auto_reply: Signal<bool>,
+    pub reply_success: Signal<bool>,
+    pub reply_with_location: Signal<bool>,
+    pub coordinates: Signal<String>,
+    pub vehicle_state: Signal<String>,
+    pub motion: Signal<bool>,
+    pub soc: Signal<String>,
+    pub speed: Signal<String>,
+    pub helmet_lock_unlocked: Signal<bool>,
+    pub helmet_present: Signal<bool>,
+    pub trunk_latch: Signal<bool>,
+    pub acc_on: Signal<bool>,
+    pub deflection_angle: Signal<String>,
+    pub alarm_type: Signal<String>,
+    pub alarm_types: Signal<Vec<AlarmType>>,
+    pub state: Signal<DeviceState>,
+}
+
+impl ClientCtx {
+    fn new() -> Self {
+        let d = SimProfile::default();
+        Self {
+            host: create_signal(String::new()),
+            port: create_signal("32405".to_string()),
+            soft_version: create_signal(String::new()),
+            heartbeat: create_signal(true),
+            auto_reply: create_signal(true),
+            reply_success: create_signal(d.reply_success),
+            reply_with_location: create_signal(d.reply_with_location),
+            coordinates: create_signal(d.coordinates.clone()),
+            vehicle_state: create_signal(d.vehicle_state.to_string()),
+            motion: create_signal(d.motion),
+            soc: create_signal(d.soc.to_string()),
+            speed: create_signal(d.speed.to_string()),
+            helmet_lock_unlocked: create_signal(d.helmet_lock_unlocked),
+            helmet_present: create_signal(d.helmet_present),
+            trunk_latch: create_signal(d.trunk_latch),
+            acc_on: create_signal(d.acc_on),
+            deflection_angle: create_signal(d.deflection_angle.to_string()),
+            alarm_type: create_signal(String::new()),
+            alarm_types: create_signal(Vec::new()),
+            state: create_signal(DeviceState::default()),
+        }
+    }
+
+    pub fn adopt_defaults(&self, d: ClientDefaults) {
+        self.host.set(d.host);
+        self.port.set(d.port.to_string());
+        self.soft_version.set(d.soft_version);
+    }
+
+    pub fn profile(&self, battery_no: String) -> SimProfile {
+        SimProfile {
+            coordinates: self.coordinates.get_clone().trim().to_string(),
+            vehicle_state: self.vehicle_state.get_clone().parse().unwrap_or(0),
+            motion: self.motion.get(),
+            soc: self.soc.get_clone().trim().parse().unwrap_or(80),
+            speed: self.speed.get_clone().trim().parse().unwrap_or(0),
+            helmet_lock_unlocked: self.helmet_lock_unlocked.get(),
+            helmet_present: self.helmet_present.get(),
+            trunk_latch: self.trunk_latch.get(),
+            acc_on: self.acc_on.get(),
+            deflection_angle: self.deflection_angle.get_clone().trim().parse().unwrap_or(5.0),
+            battery_no,
+            reply_success: self.reply_success.get(),
+            reply_with_location: self.reply_with_location.get(),
         }
     }
 }
@@ -191,6 +385,7 @@ pub struct DeployOptions {
 #[derive(Clone, Copy)]
 pub struct AppCtx {
     pub page: Signal<Page>,
+    pub client: ClientCtx,
     pub cfg: Signal<AppConfig>,
     pub device_no: Signal<String>,
     pub bike_no: Signal<String>,
@@ -210,6 +405,7 @@ impl AppCtx {
     pub fn new() -> Self {
         Self {
             page: create_signal(Page::Deploy),
+            client: ClientCtx::new(),
             cfg: create_signal(AppConfig::default()),
             device_no: create_signal(String::new()),
             bike_no: create_signal(String::new()),
@@ -248,10 +444,33 @@ impl AppCtx {
     }
 
     pub fn log(&self, text: impl Into<String>, level: LogLevel) {
+        self.log_tinted(text, level, self.page.get().tint(), None);
+    }
+
+    /// 客户端的收发固定用客户端配色：指令常常是在「中控指令」页发出的，但回包属于客户端
+    pub fn log_client(&self, text: impl Into<String>, level: LogLevel) {
+        self.log_tinted(text, level, Page::Client.tint(), None);
+    }
+
+    /// 报文日志：上行还是下行要一眼能分出来
+    pub fn log_frame(&self, dir: &str, text: impl Into<String>) {
+        let dir = if dir == "up" { "up" } else { "down" };
+        self.log_tinted(text, LogLevel::Info, Page::Client.tint(), Some(dir));
+    }
+
+    fn log_tinted(
+        &self,
+        text: impl Into<String>,
+        level: LogLevel,
+        tint: &'static str,
+        dir: Option<&'static str>,
+    ) {
         let entry = LogEntry {
             ts: now_hms(),
             text: text.into(),
             level,
+            tint,
+            dir,
         };
         let mut list = self.logs.get_clone();
         list.push(entry);
