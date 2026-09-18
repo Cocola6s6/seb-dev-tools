@@ -2,12 +2,14 @@ pub mod config;
 pub mod db;
 pub mod device;
 pub mod ecu;
+pub mod flink;
 pub mod frame;
 pub mod mq;
 pub mod payload;
 pub mod redis;
 
 pub use config::AppConfig;
+pub use flink::{FlinkJobStatus, FlinkState};
 pub use mq::Publisher;
 
 pub mod exchange {

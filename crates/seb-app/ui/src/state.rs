@@ -158,10 +158,33 @@ pub struct SendResult {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct FlinkJobStatus {
+    pub name: String,
+    pub running: bool,
+    pub state: String,
+    pub taskmanagers: u32,
+    pub slots_total: u32,
+    pub slots_available: u32,
+    pub tasks_running: u32,
+    pub tasks_total: u32,
+    pub dashboard_url: String,
+    pub description: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FlinkState {
+    pub high: FlinkJobStatus,
+    pub iot: FlinkJobStatus,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ConnState {
     pub mq: bool,
     pub mysql: bool,
     pub redis: bool,
+    pub flink: FlinkState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

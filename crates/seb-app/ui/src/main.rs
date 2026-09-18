@@ -4,7 +4,7 @@ mod components;
 mod pages;
 mod state;
 
-use components::{LogPane, QrNavButton};
+use components::{InstancePill, LogPane, QrNavButton};
 use gloo_timers::future::TimeoutFuture;
 use pages::{client::ClientPage, control::ControlPage, deploy::DeployPage, ecu::EcuPage};
 use state::{host_label, AppCtx, FrameLog, Page};
@@ -138,20 +138,19 @@ fn App() -> View {
                         NavItem(page=Page::Client, label="中控客户端")
                     }
                 }
-                (if show_pills() {
-                    view! {
-                        div(class="pills") {
-                            span(class="pill") {
-                                (conn_icon(ctx, "MySQL", |c| c.mysql, ICON_DB))
-                                (conn_icon(ctx, "Redis", |c| c.redis, ICON_CACHE))
-                                (conn_icon(ctx, "MQ", |c| c.mq, ICON_MQ))
-                                span { "内网" }
-                            }
-                        }
+                div(class="pills") {
+                    span(class="pill") {
+                        (conn_icon(ctx, "MySQL", |c| c.mysql, ICON_DB))
+                        (conn_icon(ctx, "Redis", |c| c.redis, ICON_CACHE))
+                        (conn_icon(ctx, "MQ", |c| c.mq, ICON_MQ))
+                        (flink_icon(ctx, "Flink 在线/心跳 (high)", |c| c.flink.high.running, ICON_PULSE, "http://10.12.55.240/flink-operator/seb-flink-bike-iot-high/#/overview"))
+                        (flink_icon(ctx, "Flink 定位/遥测 (iot)", |c| c.flink.iot.running, ICON_PIN, "http://10.12.55.240/flink-operator/seb-flink-bike-iot/#/overview"))
+                        span { "内网" }
                     }
-                } else {
-                    view! {
-                        div(class="pills") {
+                    (if show_pills() {
+                        view! { InstancePill {} }
+                    } else {
+                        view! {
                             Indexed(
                                 list=groups,
                                 view=move |(label, online, total): (String, usize, usize)| {
@@ -164,8 +163,8 @@ fn App() -> View {
                                 }
                             )
                         }
-                    }
-                })
+                    })
+                }
             }
 
             div(class="main") {
@@ -187,6 +186,36 @@ fn App() -> View {
 const ICON_DB: &str = "M8 1.6c2.8 0 5 .8 5 1.8s-2.2 1.8-5 1.8-5-.8-5-1.8 2.2-1.8 5-1.8zM3 3.4v9.2c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V3.4M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8";
 const ICON_CACHE: &str = "M8.8 1.5L3.8 8.6H7.6L7.2 14.5L12.2 7.4H8.4L8.8 1.5z";
 const ICON_MQ: &str = "M2 3.5h12v9H2zM2 4l6 4.2L14 4";
+const ICON_PULSE: &str = "M1.5 8h2.5l2-4.5 3 9 2-4.5h3.5";
+const ICON_PIN: &str = "M8 1.5a4 4 0 0 0-4 4c0 3.2 4 8.5 4 8.5s4-5.3 4-8.5a4 4 0 0 0-4-4zm0 5.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z";
+
+fn flink_icon(
+    ctx: AppCtx,
+    label: &'static str,
+    pick: fn(&state::ConnState) -> bool,
+    d: &'static str,
+    url: &'static str,
+) -> View {
+    let ok = move || pick(&ctx.conn.get_clone());
+    let open = move |_| {
+        spawn_local(async move {
+            let _ = api::open_external_url(url).await;
+        });
+    };
+    view! {
+        div(class="btn-with-tip", on:dblclick=open, style="cursor:pointer;") {
+            span(class=move || if ok() { "conn-icon on" } else { "conn-icon off" }) {
+                svg(viewBox="0 0 16 16", width="13", height="13") {
+                    path(d=d, fill="none", stroke="currentColor", stroke-width="1.3",
+                         stroke-linecap="round", stroke-linejoin="round")
+                }
+            }
+            span(class="tooltip") {
+                (move || format!("{label} {} (双击打开)", if ok() { "正常" } else { "未连" }))
+            }
+        }
+    }
+}
 
 fn conn_icon(ctx: AppCtx, label: &'static str, pick: fn(&state::ConnState) -> bool, d: &'static str) -> View {
     let ok = move || pick(&ctx.conn.get_clone());

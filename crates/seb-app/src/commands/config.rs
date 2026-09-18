@@ -3,12 +3,13 @@ use seb_core::config;
 use seb_core::AppConfig;
 use tauri::State;
 
-#[derive(serde::Serialize, Clone, Debug, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnState {
     pub mq: bool,
     pub mysql: bool,
     pub redis: bool,
+    pub flink: seb_core::FlinkState,
 }
 
 #[tauri::command]
@@ -31,8 +32,15 @@ pub async fn get_conn_state(state: State<'_, AppState>) -> Result<ConnState, Str
     let mq = publisher.is_connected();
     drop(publisher);
 
-    let mysql = seb_core::db::check_health(&seb_core::config::mysql()).await.unwrap_or(false);
-    let redis = seb_core::redis::check_health().await.unwrap_or(false);
+    let mysql_cfg = seb_core::config::mysql();
+    let (mysql_res, redis_res, flink) = tokio::join!(
+        seb_core::db::check_health(&mysql_cfg),
+        seb_core::redis::check_health(),
+        seb_core::flink::check_flink_state(),
+    );
 
-    Ok(ConnState { mq, mysql, redis })
+    let mysql = mysql_res.unwrap_or(false);
+    let redis = redis_res.unwrap_or(false);
+
+    Ok(ConnState { mq, mysql, redis, flink })
 }

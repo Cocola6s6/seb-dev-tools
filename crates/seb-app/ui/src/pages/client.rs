@@ -15,6 +15,47 @@ const VEHICLE_STATES: &[(&str, &str)] = &[
     ("3", "运输模式"),
 ];
 
+fn trigger_device_connect(c: ClientCtx, ctx: AppCtx, no: String) {
+    c.select(&no);
+    if c.split_gateway().1 == 0 {
+        ctx.log_client("【警告】网关端口不合法", LogLevel::Warn);
+        return;
+    }
+    ctx.log_client(format!("正在连接设备 {no}..."), LogLevel::Info);
+    spawn_local(async move {
+        match api::client_connect(&no).await {
+            Ok(st) => {
+                ctx.log_client(format!("{no} 已连接 {}", st.endpoint), LogLevel::Info);
+                // 登录后网关才会写 ecu:instance:id，实例号变了不刷新的话指令会投到旧实例
+                TimeoutFuture::new(1000).await;
+                if ctx.device_no.get_clone().trim() == no {
+                    ctx.refresh_instance(false);
+                }
+            }
+            Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+        }
+    });
+}
+
+fn toggle_device_connect(c: ClientCtx, ctx: AppCtx, no: String) {
+    c.select(&no);
+    let is_connected = c
+        .devices
+        .get_clone()
+        .into_iter()
+        .find(|d| d.config.device_no == no)
+        .map(|d| d.connected)
+        .unwrap_or(false);
+
+    if is_connected {
+        run_client_named(ctx, "断开连接", async move {
+            api::client_disconnect(&no).await.map(|_| ())
+        });
+    } else {
+        trigger_device_connect(c, ctx, no);
+    }
+}
+
 #[component]
 pub fn ClientPage() -> View {
     let ctx = use_context::<AppCtx>();
@@ -49,25 +90,9 @@ pub fn ClientPage() -> View {
     });
 
     let connect = move |_| {
-        let Some(no) = selected_no(c, ctx) else { return };
-        if c.split_gateway().1 == 0 {
-            ctx.log_client("【警告】网关端口不合法", LogLevel::Warn);
-            return;
+        if let Some(no) = selected_no(c, ctx) {
+            trigger_device_connect(c, ctx, no);
         }
-        ctx.log_client(format!("正在连接设备 {no}..."), LogLevel::Info);
-        spawn_local(async move {
-            match api::client_connect(&no).await {
-                Ok(st) => {
-                    ctx.log_client(format!("{no} 已连接 {}", st.endpoint), LogLevel::Info);
-                    // 登录后网关才会写 ecu:instance:id，实例号变了不刷新的话指令会投到旧实例
-                    TimeoutFuture::new(1000).await;
-                    if ctx.device_no.get_clone().trim() == no {
-                        ctx.refresh_instance(false);
-                    }
-                }
-                Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
-            }
-        });
     };
 
     let disconnect = move |_| {
@@ -363,10 +388,18 @@ fn ClientQrPanel() -> View {
                             let ecu_no = ecu_no.clone();
                             move |_| c.select(&ecu_no)
                         };
+                        let dblclick_qr = {
+                            let ecu_no = ecu_no.clone();
+                            move |_| {
+                                toggle_device_connect(c, ctx, ecu_no.clone());
+                            }
+                        };
                         view! {
                             div(
                                 class=cls,
-                                on:click=select_dev
+                                title=if connected { "单击选中，双击断开连接" } else { "单击选中，双击连接并登录" },
+                                on:click=select_dev,
+                                on:dblclick=dblclick_qr
                             ) {
                                 div(class="qr-svg-container") {
                                     img(src=qr_data_url, alt="二维码", style="width:100%;height:100%;display:block;")
@@ -490,6 +523,12 @@ fn DeviceList() -> View {
                             let no = no.clone();
                             move |_| c.select(&no)
                         };
+                        let dblpick = {
+                            let no = no.clone();
+                            move |_| {
+                                toggle_device_connect(c, ctx, no.clone());
+                            }
+                        };
                         let remove = {
                             let no = no.clone();
                             move |ev: web_sys::MouseEvent| {
@@ -521,61 +560,27 @@ fn DeviceList() -> View {
                             "未连接".to_string()
                         };
                         view! {
-                            div(class=cls, on:click=pick) {
+                            div(
+                                class=cls,
+                                title=if connected { "单击切换当前配置，双击断开连接" } else { "单击切换当前配置，双击连接并登录" },
+                                on:click=pick,
+                                on:dblclick=dblpick
+                            ) {
                                 div(class="device-item-top") {
                                     span(class=if connected { "dot on" } else { "dot off" }) {}
                                     span(class="device-no") { (no) }
-                                    button(class="device-del", title="移除", on:click=remove) { "×" }
+                                    button(class="device-del", title="移除", on:click=remove) {
+                                        svg(viewBox="0 0 24 24", width="12", height="12", fill="none", stroke="currentColor", stroke-width="2.4", stroke-linecap="round", stroke-linejoin="round") {
+                                            line(x1="18", y1="6", x2="6", y2="18") {}
+                                            line(x1="6", y1="6", x2="18", y2="18") {}
+                                        }
+                                    }
                                 }
                                 div(class="device-sub") { (sub) }
                             }
                         }
                     }
                 )
-            }
-
-            div(class="device-batch") {
-                div(class="device-batch-title") { "批量" }
-                div(class="row") {
-                    div(class="btn-with-tip") {
-                        button(
-                            class="icon-btn ok",
-                            on:click=move |_| run_client_named(ctx, "批量连接所有设备", api::client_connect_all())
-                        ) {
-                            svg(viewBox="0 0 24 24", width="16", height="16", fill="none", stroke="currentColor", stroke-width="2.4", stroke-linecap="round", stroke-linejoin="round") {
-                                path(d="M18.36 6.64a9 9 0 1 1-12.73 0") {}
-                                line(x1="12", y1="2", x2="12", y2="12") {}
-                            }
-                        }
-                        span(class="tooltip") { "全部连接" }
-                    }
-                    div(class="btn-with-tip") {
-                        button(
-                            class="icon-btn",
-                            on:click=move |_| run_client_named(ctx, "批量断开所有设备", api::client_disconnect_all())
-                        ) {
-                            svg(viewBox="0 0 24 24", width="16", height="16", fill="none", stroke="currentColor", stroke-width="2.4", stroke-linecap="round", stroke-linejoin="round") {
-                                circle(cx="12", cy="12", r="8.5") {}
-                            }
-                        }
-                        span(class="tooltip") { "全部断开" }
-                    }
-                    div(class="btn-with-tip") {
-                        button(
-                            class="icon-btn",
-                            on:click=move |_| run_client_named(ctx, "批量上报所有设备定位", api::client_send_location_all())
-                        ) {
-                            svg(viewBox="0 0 24 24", width="16", height="16", fill="none", stroke="currentColor", stroke-width="2.4", stroke-linecap="round", stroke-linejoin="round") {
-                                circle(cx="12", cy="12", r="6.5") {}
-                                line(x1="12", y1="2", x2="12", y2="5.5") {}
-                                line(x1="12", y1="18.5", x2="12", y2="22") {}
-                                line(x1="2", y1="12", x2="5.5", y2="12") {}
-                                line(x1="18.5", y1="12", x2="22", y2="12") {}
-                            }
-                        }
-                        span(class="tooltip") { "全部上报定位" }
-                    }
-                }
             }
         }
     }

@@ -115,7 +115,12 @@ pub fn MapPickerModal(
                     div(class="modal-dialog") {
                         div(class="modal-head") {
                             div(class="modal-title") { "高德地图坐标拾取 (GCJ-02)" }
-                            button(class="link", on:click=cancel) { "✕" }
+                            button(class="link", on:click=cancel, title="关闭") {
+                                svg(viewBox="0 0 24 24", width="16", height="16", fill="none", stroke="currentColor", stroke-width="2.2", stroke-linecap="round", stroke-linejoin="round") {
+                                    line(x1="18", y1="6", x2="6", y2="18") {}
+                                    line(x1="6", y1="6", x2="18", y2="18") {}
+                                }
+                            }
                         }
                         div(class="modal-body") {
                             div(class="row", style="gap:10px;justify-content:space-between;align-items:center;") {
@@ -197,99 +202,216 @@ pub fn Field(
 }
 
 #[component]
+pub fn InstancePill() -> View {
+    let ctx = use_context::<AppCtx>();
+    let editing_instance = create_signal(false);
+
+    let refresh_click = move |ev: web_sys::MouseEvent| {
+        ev.stop_propagation();
+        ctx.refresh_instance(false);
+    };
+
+    let inst = move || {
+        let i = ctx.instance.get_clone();
+        if i.trim().is_empty() { "0".to_string() } else { i }
+    };
+
+    view! {
+        (move || if editing_instance.get() {
+            view! {
+                div(class="combo-backdrop", on:mousedown=move |_| editing_instance.set(false)) {}
+                div(class="pill instance-inline-editor") {
+                    span(class="editor-label") { "实例:" }
+                    input(
+                        r#type="text",
+                        class="instance-mini-input",
+                        placeholder="0",
+                        bind:value=ctx.instance,
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Enter" || ev.key() == "Escape" {
+                                editing_instance.set(false);
+                            }
+                        }
+                    )
+                    button(
+                        class="instance-action-btn ok",
+                        title="完成修改",
+                        on:click=move |_| editing_instance.set(false)
+                    ) {
+                        svg(viewBox="0 0 24 24", width="11", height="11", fill="none", stroke="currentColor", stroke-width="2.6", stroke-linecap="round", stroke-linejoin="round") {
+                            path(d="M20 6L9 17l-5-5") {}
+                        }
+                    }
+                    button(
+                        class="instance-action-btn",
+                        title="从 Redis 重新查询实例号",
+                        on:click=refresh_click
+                    ) {
+                        svg(viewBox="0 0 24 24", width="11", height="11", fill="none", stroke="currentColor", stroke-width="2.2", stroke-linecap="round", stroke-linejoin="round") {
+                            path(d="M23 4v6h-6M1 20v-6h6") {}
+                            path(d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15") {}
+                        }
+                    }
+                }
+            }
+        } else {
+            view! {
+                span(
+                    class="pill instance-pill-badge",
+                    title="自动根据中控序列号从 Redis 查询，双击可手动修改",
+                    on:dblclick=move |_| editing_instance.set(true)
+                ) {
+                    span(class="instance-dot") {}
+                    span(class="instance-pill-text") { (format!("实例 {}", inst())) }
+                    button(
+                        class="instance-pill-refresh",
+                        title="从 Redis 重新查询实例号",
+                        on:click=refresh_click
+                    ) {
+                        svg(viewBox="0 0 24 24", width="11", height="11", fill="none", stroke="currentColor", stroke-width="2.2", stroke-linecap="round", stroke-linejoin="round") {
+                            path(d="M23 4v6h-6M1 20v-6h6") {}
+                            path(d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15") {}
+                        }
+                    }
+                }
+            }
+        })
+    }
+}
+
+#[component]
 pub fn DeviceBar() -> View {
     let ctx = use_context::<AppCtx>();
     let open = create_signal(false);
-    // 点箭头展开的是整份清单，输入时才按已敲的位数过滤
-    let show_all = create_signal(false);
-    let matches = create_memo(move || {
-        let kw = if show_all.get() {
-            String::new()
-        } else {
-            ctx.device_no.get_clone().trim().to_string()
-        };
+
+    let inner_devices = create_memo(move || {
         ctx.client
             .devices
             .get_clone()
             .into_iter()
-            // 这两个页面只打内网后台，连别的网关的设备列出来也没法用
-            .filter(|d| d.config.host == INNER_HOST && (kw.is_empty() || d.config.device_no.contains(&kw)))
+            // 中控指令和配置只打内网网关
+            .filter(|d| d.config.host == INNER_HOST)
             .collect::<Vec<_>>()
     });
+
+    let online_count = create_memo(move || {
+        inner_devices
+            .get_clone()
+            .into_iter()
+            .filter(|d| d.connected)
+            .count()
+    });
+
     view! {
         div(class="section") {
-            div(class="section-title") { "设备" }
-            div(class="grid grid-2") {
-                div(class="field combo") {
-                    label { "中控设备序列号 (DeviceNo)" }
-                    div(class="combo-input") {
-                        input(
-                            r#type="text",
-                            placeholder="799497080",
-                            bind:value=ctx.device_no,
-                            on:focus=move |_| { show_all.set(false); open.set(true); },
-                            on:blur=move |_| open.set(false),
-                            on:change=move |_| ctx.refresh_instance(true),
-                            on:keydown=move |ev: web_sys::KeyboardEvent| {
-                                if ev.key() == "Tab" && !ev.shift_key() && ctx.device_no.get_clone().trim().is_empty() {
-                                    ctx.device_no.set("799497080".to_string());
-                                    ctx.refresh_instance(true);
-                                }
-                            }
-                        )
-                        // 拦下默认行为，免得抢走输入框的焦点、打断正在敲的内容
-                        button(
-                            class=move || if open.get() { "combo-caret open" } else { "combo-caret" },
-                            on:mousedown=move |ev: web_sys::MouseEvent| {
-                                ev.prevent_default();
-                                let was = open.get();
-                                show_all.set(!was);
-                                open.set(!was);
-                            }
-                        ) {
-                            svg(viewBox="0 0 10 6", width="10", height="6") {
-                                path(d="M1 1l4 4 4-4", fill="none", stroke="currentColor", stroke-width="1.6", stroke-linecap="round", stroke-linejoin="round")
+            div(class="section-title") {
+                span { "设备" }
+            }
+
+            div(class="device-bar-row") {
+                div(class="field device-no-field") {
+                    input(
+                        r#type="text",
+                        placeholder="输入中控设备序列号 (如 799497080)",
+                        bind:value=ctx.device_no,
+                        on:change=move |_| ctx.refresh_instance(true),
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Enter" {
+                                ctx.refresh_instance(true);
+                            } else if ev.key() == "Tab" && !ev.shift_key() && ctx.device_no.get_clone().trim().is_empty() {
+                                ctx.device_no.set("799497080".to_string());
+                                ctx.refresh_instance(true);
                             }
                         }
+                    )
+                }
+
+                div(class="device-select-wrapper") {
+                    button(
+                        class=move || if open.get() { "device-select-trigger-btn active" } else { "device-select-trigger-btn" },
+                        title="查看并快捷选择已在模拟器添加的中控设备",
+                        on:click=move |ev: web_sys::MouseEvent| {
+                            ev.stop_propagation();
+                            open.set(!open.get());
+                        }
+                    ) {
+                        svg(viewBox="0 0 24 24", width="14", height="14", fill="none", stroke="currentColor", stroke-width="2", stroke-linecap="round", stroke-linejoin="round") {
+                            rect(x="2", y="3", width="20", height="14", rx="2", ry="2") {}
+                            line(x1="8", y1="21", x2="16", y2="21") {}
+                            line(x1="12", y1="17", x2="12", y2="21") {}
+                        }
+                        span {
+                            (move || {
+                                let total = inner_devices.get_clone().len();
+                                if total > 0 {
+                                    let online = online_count.get();
+                                    format!("设备 ({online}/{total})")
+                                } else {
+                                    "选择设备".to_string()
+                                }
+                            })
+                        }
+                        svg(viewBox="0 0 10 6", width="10", height="6", class=move || if open.get() { "caret open" } else { "caret" }) {
+                            path(d="M1 1l4 4 4-4", fill="none", stroke="currentColor", stroke-width="1.6", stroke-linecap="round", stroke-linejoin="round") {}
+                        }
                     }
-                    // 箭头展开时输入框没有焦点，得靠这层透明幕布收起列表
-                    (if open.get() && show_all.get() {
-                        view! { div(class="combo-backdrop", on:mousedown=move |_| open.set(false)) {} }
-                    } else {
-                        view! {}
-                    })
-                    (if open.get() && !matches.get_clone().is_empty() {
+
+                    (if open.get() {
                         view! {
-                            div(class="combo-list", on:mousedown=move |ev: web_sys::MouseEvent| ev.prevent_default()) {
-                                Indexed(
-                                    list=matches,
-                                    view=move |st: crate::state::DeviceState| {
-                                        let no = st.config.device_no.clone();
-                                        let pick = no.clone();
-                                        view! {
-                                            div(class="combo-item", on:click=move |_| {
-                                                ctx.device_no.set(pick.clone());
-                                                ctx.refresh_instance(true);
-                                                open.set(false);
-                                            }) {
-                                                span(class="k") { (no) }
-                                                span(class=if st.connected { "dev-dot on" } else { "dev-dot off" }) {}
-                                            }
+                            div(class="combo-backdrop", on:click=move |_| open.set(false)) {}
+                            div(class="device-dropdown-popover") {
+                                (if inner_devices.get_clone().is_empty() {
+                                    view! {
+                                        div(class="device-dropdown-empty") {
+                                            "暂无模拟设备，可在「中控客户端」添加或连接"
                                         }
                                     }
-                                )
+                                } else {
+                                    view! {
+                                        div(class="device-dropdown-header") {
+                                            span { "快捷载入设备" }
+                                            span(class="device-dropdown-count") {
+                                                (format!("共 {} 台", inner_devices.get_clone().len()))
+                                            }
+                                        }
+                                        div(class="device-dropdown-items") {
+                                            Indexed(
+                                                list=inner_devices,
+                                                view=move |st: crate::state::DeviceState| {
+                                                    let no = st.config.device_no.clone();
+                                                    let connected = st.connected;
+                                                    let pick = no.clone();
+                                                    let is_current = {
+                                                        let no = no.clone();
+                                                        move || ctx.device_no.get_clone().trim() == no
+                                                    };
+                                                    let item_cls = move || {
+                                                        if is_current() {
+                                                            "device-dropdown-item active"
+                                                        } else {
+                                                            "device-dropdown-item"
+                                                        }
+                                                    };
+                                                    view! {
+                                                        div(class=item_cls, on:click=move |_| {
+                                                            ctx.device_no.set(pick.clone());
+                                                            ctx.refresh_instance(true);
+                                                            open.set(false);
+                                                        }) {
+                                                            span(class=if connected { "dev-dot on" } else { "dev-dot off" }) {}
+                                                            span(class="dev-no") { (no) }
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                })
                             }
                         }
                     } else {
                         view! {}
                     })
-                }
-                div(class="field") {
-                    label { "实例号 (路由键后缀)" }
-                    div(class="field-inline") {
-                        input(r#type="text", placeholder="0", bind:value=ctx.instance)
-                        button(on:click=move |_| ctx.refresh_instance(false)) { "查实例号" }
-                    }
                 }
             }
         }

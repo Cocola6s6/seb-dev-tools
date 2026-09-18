@@ -80,6 +80,15 @@ pub async fn copy_to_clipboard(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Serialize)]
+struct UrlArg<'a> {
+    url: &'a str,
+}
+
+pub async fn open_external_url(url: &str) -> Result<(), String> {
+    invoke_void("open_external_url", UrlArg { url }).await
+}
+
 pub fn init_map_picker(container_id: &str, initial_coord: &str, on_pick: impl Fn(String) + 'static) {
     let cb = Closure::wrap(Box::new(move |coord: String| {
         on_pick(coord);
@@ -311,18 +320,6 @@ pub async fn client_connect(device_no: &str) -> Result<DeviceState, String> {
 
 pub async fn client_disconnect(device_no: &str) -> Result<DeviceState, String> {
     invoke("client_disconnect", Device { device_no }).await
-}
-
-pub async fn client_connect_all() -> Result<(), String> {
-    invoke_void("client_connect_all", Empty {}).await
-}
-
-pub async fn client_disconnect_all() -> Result<(), String> {
-    invoke_void("client_disconnect_all", Empty {}).await
-}
-
-pub async fn client_send_location_all() -> Result<(), String> {
-    invoke_void("client_send_location_all", Empty {}).await
 }
 
 pub async fn client_poll() -> Result<ClientPoll, String> {

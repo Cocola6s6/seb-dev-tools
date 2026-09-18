@@ -3,11 +3,7 @@ use seb_core::device::{
     DeviceConfig, DeviceState, SimProfile, DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT,
 };
 use serde::Serialize;
-use std::time::Duration;
 use tauri::State;
-
-/// 批量操作时逐台错开，避免网关同一瞬间收到一堆登录
-const BATCH_GAP: Duration = Duration::from_millis(200);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,42 +117,6 @@ pub async fn client_disconnect(
     let link = state.devices.get(&device_no)?;
     link.disconnect().await;
     Ok(link.state())
-}
-
-#[tauri::command]
-pub async fn client_connect_all(state: State<'_, AppState>) -> Result<(), String> {
-    for link in state.devices.list() {
-        if link.connected() {
-            continue;
-        }
-        if let Err(e) = link.connect().await {
-            link.note(format!("连接失败: {e}"));
-        }
-        tokio::time::sleep(BATCH_GAP).await;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn client_disconnect_all(state: State<'_, AppState>) -> Result<(), String> {
-    for link in state.devices.list() {
-        link.disconnect().await;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn client_send_location_all(state: State<'_, AppState>) -> Result<(), String> {
-    for link in state.devices.list() {
-        if !link.connected() {
-            continue;
-        }
-        if let Err(e) = link.send_location().await {
-            link.note(format!("上报定位失败: {e}"));
-        }
-        tokio::time::sleep(BATCH_GAP).await;
-    }
-    Ok(())
 }
 
 #[tauri::command]

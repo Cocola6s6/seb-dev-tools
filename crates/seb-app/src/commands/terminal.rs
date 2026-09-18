@@ -74,7 +74,7 @@ fi"#
         };
 
         let win_cmd = format!(
-            r#"if (Get-Command stern -ErrorAction SilentlyContinue) {{
+            r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; chcp 65001 > $null; if (Get-Command stern -ErrorAction SilentlyContinue) {{
     Write-Host "使用 stern 监听 seb-iot-receiver 日志..." -ForegroundColor Green
     stern 'seb-iot-receiver' -n shared-electric-bicycle --tail=200{filter_win}
 }} elseif (Get-Command kubectl -ErrorAction SilentlyContinue) {{
@@ -107,4 +107,21 @@ fi"#
     };
 
     Ok(display_cmd)
+}
+
+#[tauri::command]
+pub fn open_external_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("open").arg(&url).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("cmd").args(["/c", "start", "", &url]).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("xdg-open").arg(&url).spawn();
+    }
+    Ok(())
 }
