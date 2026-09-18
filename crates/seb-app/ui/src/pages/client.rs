@@ -449,7 +449,12 @@ fn DeviceList() -> View {
                 button(class="icon-btn", title="新增设备", on:click=move |_| {
                     adding.set(true);
                     new_no.set(String::new());
-                }) { "＋" }
+                }) {
+                    svg(viewBox="0 0 24 24", width="15", height="15", fill="none", stroke="currentColor", stroke-width="2.4", stroke-linecap="round", stroke-linejoin="round") {
+                        line(x1="12", y1="5", x2="12", y2="19") {}
+                        line(x1="5", y1="12", x2="19", y2="12") {}
+                    }
+                }
             }
 
             (move || if adding.get() {
@@ -533,15 +538,41 @@ fn DeviceList() -> View {
                 div(class="device-batch-title") { "批量" }
                 div(class="row") {
                     div(class="btn-with-tip") {
-                        button(class="icon-btn ok", on:click=move |_| run_client_named(ctx, "批量连接所有设备", api::client_connect_all())) { "⏻" }
+                        button(
+                            class="icon-btn ok",
+                            on:click=move |_| run_client_named(ctx, "批量连接所有设备", api::client_connect_all())
+                        ) {
+                            svg(viewBox="0 0 24 24", width="16", height="16", fill="none", stroke="currentColor", stroke-width="2.4", stroke-linecap="round", stroke-linejoin="round") {
+                                path(d="M18.36 6.64a9 9 0 1 1-12.73 0") {}
+                                line(x1="12", y1="2", x2="12", y2="12") {}
+                            }
+                        }
                         span(class="tooltip") { "全部连接" }
                     }
                     div(class="btn-with-tip") {
-                        button(class="icon-btn", on:click=move |_| run_client_named(ctx, "批量断开所有设备", api::client_disconnect_all())) { "⭘" }
+                        button(
+                            class="icon-btn",
+                            on:click=move |_| run_client_named(ctx, "批量断开所有设备", api::client_disconnect_all())
+                        ) {
+                            svg(viewBox="0 0 24 24", width="16", height="16", fill="none", stroke="currentColor", stroke-width="2.4", stroke-linecap="round", stroke-linejoin="round") {
+                                circle(cx="12", cy="12", r="8.5") {}
+                            }
+                        }
                         span(class="tooltip") { "全部断开" }
                     }
                     div(class="btn-with-tip") {
-                        button(class="icon-btn", on:click=move |_| run_client_named(ctx, "批量上报所有设备定位", api::client_send_location_all())) { "⌖" }
+                        button(
+                            class="icon-btn",
+                            on:click=move |_| run_client_named(ctx, "批量上报所有设备定位", api::client_send_location_all())
+                        ) {
+                            svg(viewBox="0 0 24 24", width="16", height="16", fill="none", stroke="currentColor", stroke-width="2.4", stroke-linecap="round", stroke-linejoin="round") {
+                                circle(cx="12", cy="12", r="6.5") {}
+                                line(x1="12", y1="2", x2="12", y2="5.5") {}
+                                line(x1="12", y1="18.5", x2="12", y2="22") {}
+                                line(x1="2", y1="12", x2="5.5", y2="12") {}
+                                line(x1="18.5", y1="12", x2="22", y2="12") {}
+                            }
+                        }
                         span(class="tooltip") { "全部上报定位" }
                     }
                 }
