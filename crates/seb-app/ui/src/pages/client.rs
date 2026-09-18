@@ -1,6 +1,6 @@
-use crate::actions::run_client;
+use crate::actions::run_client_named;
 use crate::api;
-use crate::components::{select_value, Check, Field, MapPickerModal};
+use crate::components::{render_qr_svg, select_value, Check, Field, MapPickerModal};
 use crate::state::{AlarmType, AppCtx, ClientCtx, DeviceState, LogLevel};
 use gloo_timers::future::TimeoutFuture;
 use std::cell::Cell;
@@ -54,6 +54,7 @@ pub fn ClientPage() -> View {
             ctx.log_client("【警告】网关端口不合法", LogLevel::Warn);
             return;
         }
+        ctx.log_client(format!("正在连接设备 {no}..."), LogLevel::Info);
         spawn_local(async move {
             match api::client_connect(&no).await {
                 Ok(st) => {
@@ -71,7 +72,7 @@ pub fn ClientPage() -> View {
 
     let disconnect = move |_| {
         let Some(no) = selected_no(c, ctx) else { return };
-        run_client(ctx, async move { api::client_disconnect(&no).await.map(|_| ()) });
+        run_client_named(ctx, "断开连接", async move { api::client_disconnect(&no).await.map(|_| ()) });
     };
 
     let send_alarm = move |_| {
@@ -83,7 +84,7 @@ pub fn ClientPage() -> View {
             .into_iter()
             .find(|a| a.code.to_string() == code)
         {
-            Some(a) => run_client(ctx, async move {
+            Some(a) => run_client_named(ctx, "上报告警", async move {
                 api::client_send_alarm(no, a.code, a.name).await
             }),
             None => ctx.log_client("【警告】请先选择告警类型", LogLevel::Warn),
@@ -91,168 +92,312 @@ pub fn ClientPage() -> View {
     };
 
     view! {
-        div {
-            div(class="page-head") {
-                div(class="page-title") { "中控客户端" }
-                div(class="page-desc") {
-                    "以中控设备的身份连上 IoT 网关，可同时模拟多台。"
-                }
+        div(class="client-split-container") {
+            div(class="client-split-left") {
+                ClientQrPanel {}
             }
-
-            div(class="device-layout") {
-                DeviceList {}
-
-                div(class="device-main") {
-                    div(class="section") {
-                        div(class="section-title") { "网关连接" }
-                        div(class="grid grid-2") {
-                            div(class="field") {
-                                label {
-                                    span { "网关地址" }
-                                    span(class="help") {
-                                        "?"
-                                        span(class="tip") {
-                                            div { "内网 bike-seb-inner-test.costrip.cn:32405" }
-                                            div { "外网 bike-seb-test.costrip.cn:8514" }
-                                            div { "正式 bike-seb.costrip.cn:8514" }
-                                        }
-                                    }
-                                }
-                                input(r#type="text", placeholder="域名:端口", bind:value=c.gateway)
-                            }
-                            div(class="field") {
-                                label { "软件版本号" }
-                                input(r#type="text", bind:value=c.soft_version)
-                            }
-                        }
-                        div(class="card-actions") {
-                            button(class="primary", on:click=connect) { "连接并登录" }
-                            button(on:click=disconnect) { "断开" }
-                            span(class="spacer") {}
-                            Check(label="60 秒心跳", checked=c.heartbeat)
-                        }
+            div(class="client-split-right") {
+                div(class="page-head") {
+                    div(class="page-title") { "中控客户端" }
+                    div(class="page-desc") {
+                        "以中控设备的身份连上 IoT 网关，可同时模拟多台。"
                     }
+                }
 
-                    div(class="section") {
-                        div(class="section-title") { "车辆姿态" }
-                        div(class="grid grid-3") {
-                            div(class="field") {
-                                label { "坐标" }
-                                div(class="field-inline") {
-                                    input(
-                                        r#type="text",
-                                        placeholder="如 108.367035,22.756302",
-                                        bind:value=c.coordinates,
-                                        on:keydown=move |ev: web_sys::KeyboardEvent| {
-                                            if ev.key() == "Tab" && !ev.shift_key() && c.coordinates.get_clone().trim().is_empty() {
-                                                c.coordinates.set("108.367035,22.756302".to_string());
+                div(class="device-layout") {
+                    DeviceList {}
+
+                    div(class="device-main") {
+                        div(class="section") {
+                            div(class="section-title") { "网关连接" }
+                            div(class="grid grid-2") {
+                                div(class="field") {
+                                    label {
+                                        span { "网关地址" }
+                                        span(class="help") {
+                                            "?"
+                                            span(class="tip") {
+                                                div { "内网 bike-seb-inner-test.costrip.cn:32405" }
+                                                div { "外网 bike-seb-test.costrip.cn:8514" }
+                                                div { "正式 bike-seb.costrip.cn:8514" }
                                             }
                                         }
-                                    )
-                                    button(
-                                        class="icon-btn",
-                                        title="选择地图坐标",
-                                        on:click=move |_| map_picker_open.set(true)
-                                    ) {
-                                        svg(viewBox="0 0 24 24", width="16", height="16", fill="currentColor") {
-                                            path(d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z") {}
+                                    }
+                                    input(r#type="text", placeholder="域名:端口", bind:value=c.gateway)
+                                }
+                                div(class="field") {
+                                    label { "软件版本号" }
+                                    input(r#type="text", bind:value=c.soft_version)
+                                }
+                            }
+                            div(class="card-actions") {
+                                button(class="primary", on:click=connect) { "连接并登录" }
+                                button(on:click=disconnect) { "断开" }
+                                span(class="spacer") {}
+                                Check(label="60 秒心跳", checked=c.heartbeat)
+                            }
+                        }
+
+                        div(class="section") {
+                            div(class="section-title") { "车辆姿态" }
+                            div(class="grid grid-3") {
+                                div(class="field") {
+                                    label { "坐标" }
+                                    div(class="field-inline") {
+                                        input(
+                                            r#type="text",
+                                            placeholder="如 108.367035,22.756302",
+                                            bind:value=c.coordinates,
+                                            on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                                if ev.key() == "Tab" && !ev.shift_key() && c.coordinates.get_clone().trim().is_empty() {
+                                                    c.coordinates.set("108.367035,22.756302".to_string());
+                                                }
+                                            }
+                                        )
+                                        button(
+                                            class="icon-btn",
+                                            title="选择地图坐标",
+                                            on:click=move |_| map_picker_open.set(true)
+                                        ) {
+                                            svg(viewBox="0 0 24 24", width="16", height="16", fill="currentColor") {
+                                                path(d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z") {}
+                                            }
                                         }
                                     }
                                 }
+                                div(class="field") {
+                                    label { "车辆状态" }
+                                    select(on:change=move |ev| c.vehicle_state.set(select_value(ev))) {
+                                        Indexed(
+                                            list=VEHICLE_STATES.to_vec(),
+                                            view=move |(value, label): (&'static str, &'static str)| {
+                                                let selected = c.vehicle_state.get_clone() == value;
+                                                view! { option(value=value, selected=selected) { (label) } }
+                                            }
+                                        )
+                                    }
+                                }
+                                Field(label="电量 SOC", value=c.soc)
+                                Field(label="速度", value=c.speed)
+                                Field(label="预还车偏向角", value=c.deflection_angle)
                             }
+                            div(class="row checks", style="margin-top:14px") {
+                                Check(label="运动中", checked=c.motion)
+                                Check(label="头盔锁已解锁", checked=c.helmet_lock_unlocked)
+                                Check(label="头盔在位", checked=c.helmet_present)
+                                Check(label="尾箱在位", checked=c.trunk_latch)
+                                Check(label="ACC 供电", checked=c.acc_on)
+                            }
+                            div(class="card-actions") {
+                                button(class="primary", on:click=move |_| {
+                                    if let Some(no) = selected_no(c, ctx) {
+                                        run_client_named(ctx, "上报定位", api::client_send_location(no));
+                                    }
+                                }) { "上报定位" }
+                                button(on:click=move |_| {
+                                    if let Some(no) = selected_no(c, ctx) {
+                                        run_client_named(ctx, "上报 BMS", api::client_send_bms(no));
+                                    }
+                                }) { "上报 BMS" }
+                            }
+                        }
+
+                        div(class="section") {
+                            div(class="section-title") { "指令应答" }
+                            div(class="row checks") {
+                                Check(label="自动应答", checked=c.auto_reply)
+                                Check(label="应答结果为成功", checked=c.reply_success)
+                                Check(label="应答后补发定位", checked=c.reply_with_location)
+                            }
+                            div(class="hint", style="margin-top:12px") {
+                                (move || match c.current().and_then(|s| s.last_msg_id) {
+                                    Some(id) => format!("最近收到的 msgId: {id}"),
+                                    None => "尚未收到下发指令".to_string(),
+                                })
+                            }
+                            div(class="card-actions") {
+                                button(on:click=move |_| {
+                                    if let Some(no) = selected_no(c, ctx) {
+                                        run_client_named(ctx, "手动回成功", api::client_send_reply(no, true));
+                                    }
+                                }) { "手动回成功" }
+                                button(on:click=move |_| {
+                                    if let Some(no) = selected_no(c, ctx) {
+                                        run_client_named(ctx, "手动回失败", api::client_send_reply(no, false));
+                                    }
+                                }) { "手动回失败" }
+                            }
+                        }
+
+                        div(class="section") {
+                            div(class="section-title") { "告警与心跳" }
                             div(class="field") {
-                                label { "车辆状态" }
-                                select(on:change=move |ev| c.vehicle_state.set(select_value(ev))) {
+                                label { "告警类型" }
+                                select(class="w-lg", on:change=move |ev| c.alarm_type.set(select_value(ev))) {
                                     Indexed(
-                                        list=VEHICLE_STATES.to_vec(),
-                                        view=move |(value, label): (&'static str, &'static str)| {
-                                            let selected = c.vehicle_state.get_clone() == value;
-                                            view! { option(value=value, selected=selected) { (label) } }
+                                        list=c.alarm_types,
+                                        view=move |a: AlarmType| {
+                                            let value = a.code.to_string();
+                                            let selected = c.alarm_type.get_clone() == value;
+                                            let text = format!("{}  ({})", a.name, a.hex);
+                                            view! { option(value=value, selected=selected) { (text) } }
                                         }
                                     )
                                 }
                             }
-                            Field(label="电量 SOC", value=c.soc)
-                            Field(label="速度", value=c.speed)
-                            Field(label="预还车偏向角", value=c.deflection_angle)
-                        }
-                        div(class="row checks", style="margin-top:14px") {
-                            Check(label="运动中", checked=c.motion)
-                            Check(label="头盔锁已解锁", checked=c.helmet_lock_unlocked)
-                            Check(label="头盔在位", checked=c.helmet_present)
-                            Check(label="尾箱在位", checked=c.trunk_latch)
-                            Check(label="ACC 供电", checked=c.acc_on)
-                        }
-                        div(class="card-actions") {
-                            button(class="primary", on:click=move |_| {
-                                if let Some(no) = selected_no(c, ctx) {
-                                    run_client(ctx, api::client_send_location(no));
-                                }
-                            }) { "上报定位" }
-                            button(on:click=move |_| {
-                                if let Some(no) = selected_no(c, ctx) {
-                                    run_client(ctx, api::client_send_bms(no));
-                                }
-                            }) { "上报 BMS" }
-                        }
-                    }
-
-                    div(class="section") {
-                        div(class="section-title") { "指令应答" }
-                        div(class="row checks") {
-                            Check(label="自动应答", checked=c.auto_reply)
-                            Check(label="应答结果为成功", checked=c.reply_success)
-                            Check(label="应答后补发定位", checked=c.reply_with_location)
-                        }
-                        div(class="hint", style="margin-top:12px") {
-                            (move || match c.current().and_then(|st| st.last_msg_id) {
-                                Some(id) => format!("最近收到的 msgId: {id}"),
-                                None => "尚未收到下发指令".to_string(),
-                            })
-                        }
-                        div(class="card-actions") {
-                            button(on:click=move |_| {
-                                if let Some(no) = selected_no(c, ctx) {
-                                    run_client(ctx, api::client_send_reply(no, true));
-                                }
-                            }) { "手动回成功" }
-                            button(on:click=move |_| {
-                                if let Some(no) = selected_no(c, ctx) {
-                                    run_client(ctx, api::client_send_reply(no, false));
-                                }
-                            }) { "手动回失败" }
-                        }
-                    }
-
-                    div(class="section") {
-                        div(class="section-title") { "告警与心跳" }
-                        div(class="field") {
-                            label { "告警类型" }
-                            select(class="w-lg", on:change=move |ev| c.alarm_type.set(select_value(ev))) {
-                                Indexed(
-                                    list=c.alarm_types,
-                                    view=move |a: AlarmType| {
-                                        let value = a.code.to_string();
-                                        let selected = c.alarm_type.get_clone() == value;
-                                        let text = format!("{}  ({})", a.name, a.hex);
-                                        view! { option(value=value, selected=selected) { (text) } }
+                            div(class="card-actions") {
+                                button(class="primary", on:click=send_alarm) { "上报告警" }
+                                button(on:click=move |_| {
+                                    if let Some(no) = selected_no(c, ctx) {
+                                        run_client_named(ctx, "发送心跳", api::client_send_ping(no));
                                     }
-                                )
+                                }) { "发心跳" }
                             }
-                        }
-                        div(class="card-actions") {
-                            button(class="primary", on:click=send_alarm) { "上报告警" }
-                            button(on:click=move |_| {
-                                if let Some(no) = selected_no(c, ctx) {
-                                    run_client(ctx, api::client_send_ping(no));
-                                }
-                            }) { "发心跳" }
                         }
                     }
                 }
-            }
 
-            MapPickerModal(open=map_picker_open, target_coord=c.coordinates)
+                MapPickerModal(open=map_picker_open, target_coord=c.coordinates)
+            }
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct QrBikeItem {
+    device_no: String,
+    bike_no: String,
+    connected: bool,
+}
+
+#[component]
+fn ClientQrPanel() -> View {
+    let ctx = use_context::<AppCtx>();
+    let c = ctx.client;
+
+    let bike_map = create_signal(std::collections::HashMap::<String, String>::new());
+
+    create_effect(move || {
+        let devs = c.devices.get_clone();
+        let ecu_nos: Vec<String> = devs.into_iter().map(|d| d.config.device_no).collect();
+        if ecu_nos.is_empty() {
+            bike_map.set(std::collections::HashMap::new());
+            return;
+        }
+        spawn_local(async move {
+            if let Ok(map) = api::client_get_bike_nos(ecu_nos).await {
+                bike_map.set(map);
+            }
+        });
+    });
+
+    let selected_dev = create_memo(move || c.selected.get_clone());
+
+    let valid_items = create_memo(move || {
+        let devs = c.devices.get_clone();
+        let map = bike_map.get_clone();
+        devs.into_iter()
+            .filter_map(|d| {
+                let ecu = d.config.device_no;
+                let bike_no = map.get(&ecu)?.clone();
+                if bike_no.trim().is_empty() {
+                    return None;
+                }
+                Some(QrBikeItem {
+                    device_no: ecu,
+                    bike_no,
+                    connected: d.connected,
+                })
+            })
+            .collect::<Vec<_>>()
+    });
+
+    view! {
+        div(class="client-qr-panel") {
+            div(class="client-qr-grid") {
+                Indexed(
+                    list=valid_items,
+                    view=move |item: QrBikeItem| {
+                        let ecu_no = item.device_no.clone();
+                        let bike_no = item.bike_no.clone();
+                        let connected = item.connected;
+                        let is_selected = {
+                            let ecu_no = ecu_no.clone();
+                            move || selected_dev.get_clone() == ecu_no
+                        };
+                        let cls = {
+                            let is_selected = is_selected.clone();
+                            move || {
+                                let mut res = String::from("client-qr-card");
+                                if connected {
+                                    res.push_str(" online");
+                                } else {
+                                    res.push_str(" offline");
+                                }
+                                if is_selected() {
+                                    res.push_str(" active");
+                                }
+                                res
+                            }
+                        };
+                        let qr_url = format!("https://gycx.cn?s={bike_no}");
+                        let qr_data_url = {
+                            let svg = render_qr_svg(&qr_url).unwrap_or_default();
+                            format!("data:image/svg+xml;utf8,{}", js_sys::encode_uri_component(&svg))
+                        };
+                        let copied = create_signal(false);
+                        let copy_link = {
+                            let url = qr_url.clone();
+                            move |ev: web_sys::MouseEvent| {
+                                ev.stop_propagation();
+                                let url = url.clone();
+                                spawn_local(async move {
+                                    let _ = api::copy_to_clipboard(&url).await;
+                                    copied.set(true);
+                                    TimeoutFuture::new(1500).await;
+                                    copied.set(false);
+                                });
+                            }
+                        };
+                        let select_dev = {
+                            let ecu_no = ecu_no.clone();
+                            move |_| c.select(&ecu_no)
+                        };
+                        view! {
+                            div(
+                                class=cls,
+                                on:click=select_dev
+                            ) {
+                                div(class="qr-svg-container") {
+                                    img(src=qr_data_url, alt="二维码", style="width:100%;height:100%;display:block;")
+                                }
+                                div(class="nav-qr-foot") {
+                                    span(class="qr-bike-no") { (bike_no) }
+                                    button(
+                                        class=move || if copied.get() { "qr-copy-btn copied" } else { "qr-copy-btn" },
+                                        title=move || if copied.get() { "已复制" } else { "复制链接" },
+                                        on:click=copy_link
+                                    ) {
+                                        (if copied.get() {
+                                            view! {
+                                                svg(viewBox="0 0 24 24", width="12", height="12", fill="currentColor") {
+                                                    path(d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z") {}
+                                                }
+                                            }
+                                        } else {
+                                            view! {
+                                                svg(viewBox="0 0 24 24", width="12", height="12", fill="currentColor") {
+                                                    path(d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z") {}
+                                                }
+                                            }
+                                        })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                )
+            }
         }
     }
 }
@@ -307,7 +452,7 @@ fn DeviceList() -> View {
                 }) { "＋" }
             }
 
-            (if adding.get() {
+            (move || if adding.get() {
                 view! {
                     div(class="device-add") {
                         input(
@@ -334,6 +479,8 @@ fn DeviceList() -> View {
                     list=c.devices,
                     view=move |st: DeviceState| {
                         let no = st.config.device_no.clone();
+                        let connected = st.connected;
+                        let coords = st.config.profile.coordinates.clone();
                         let pick = {
                             let no = no.clone();
                             move |_| c.select(&no)
@@ -363,15 +510,15 @@ fn DeviceList() -> View {
                                 if c.selected.get_clone() == no { "device-item active" } else { "device-item" }
                             }
                         };
-                        let sub = if st.connected {
-                            st.config.profile.coordinates.clone()
+                        let sub = if connected {
+                            coords
                         } else {
                             "未连接".to_string()
                         };
                         view! {
                             div(class=cls, on:click=pick) {
                                 div(class="device-item-top") {
-                                    span(class=if st.connected { "dot on" } else { "dot off" }) {}
+                                    span(class=if connected { "dot on" } else { "dot off" }) {}
                                     span(class="device-no") { (no) }
                                     button(class="device-del", title="移除", on:click=remove) { "×" }
                                 }
@@ -386,15 +533,15 @@ fn DeviceList() -> View {
                 div(class="device-batch-title") { "批量" }
                 div(class="row") {
                     div(class="btn-with-tip") {
-                        button(class="icon-btn ok", on:click=move |_| run_client(ctx, api::client_connect_all())) { "⏻" }
+                        button(class="icon-btn ok", on:click=move |_| run_client_named(ctx, "批量连接所有设备", api::client_connect_all())) { "⏻" }
                         span(class="tooltip") { "全部连接" }
                     }
                     div(class="btn-with-tip") {
-                        button(class="icon-btn", on:click=move |_| run_client(ctx, api::client_disconnect_all())) { "⭘" }
+                        button(class="icon-btn", on:click=move |_| run_client_named(ctx, "批量断开所有设备", api::client_disconnect_all())) { "⭘" }
                         span(class="tooltip") { "全部断开" }
                     }
                     div(class="btn-with-tip") {
-                        button(class="icon-btn", on:click=move |_| run_client(ctx, api::client_send_location_all())) { "⌖" }
+                        button(class="icon-btn", on:click=move |_| run_client_named(ctx, "批量上报所有设备定位", api::client_send_location_all())) { "⌖" }
                         span(class="tooltip") { "全部上报定位" }
                     }
                 }

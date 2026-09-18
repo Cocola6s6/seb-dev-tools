@@ -224,3 +224,21 @@ pub async fn client_send_reply(
         .send_reply(msg_id, success)
         .await
 }
+
+#[tauri::command]
+pub async fn client_get_bike_nos(device_nos: Vec<String>) -> std::collections::HashMap<String, String> {
+    let mut map = seb_core::db::batch_find_bike_nos_by_ecus(&seb_core::config::mysql(), &device_nos).await;
+    for no in &device_nos {
+        let no = no.trim();
+        if !no.is_empty() && !map.contains_key(no) {
+            let key = format!("{}{no}", seb_core::redis::DEVICE_SERIAL_NO_PREFIX);
+            if let Ok(Some(bike_no)) = seb_core::redis::get(&key).await {
+                let bike_no = bike_no.trim().to_string();
+                if !bike_no.is_empty() {
+                    map.insert(no.to_string(), bike_no);
+                }
+            }
+        }
+    }
+    map
+}

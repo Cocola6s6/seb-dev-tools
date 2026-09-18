@@ -109,7 +109,7 @@ pub async fn mset(pairs: &[(&str, &str)]) -> Result<(), String> {
     }
 }
 
-async fn get(key: &str) -> Result<Option<String>, String> {
+pub async fn get(key: &str) -> Result<Option<String>, String> {
     let stream = TcpStream::connect((REDIS_HOST, REDIS_PORT))
         .await
         .map_err(|e| format!("连接 Redis {} 失败: {e}", endpoint()))?;

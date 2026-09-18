@@ -3,6 +3,7 @@ use crate::state::{AppCtx, LogLevel, SendResult};
 use std::future::Future;
 use wasm_bindgen_futures::spawn_local;
 
+#[allow(dead_code)]
 pub fn run_client<F>(ctx: AppCtx, fut: F)
 where
     F: Future<Output = Result<(), String>> + 'static,
@@ -10,6 +11,22 @@ where
     spawn_local(async move {
         if let Err(e) = fut.await {
             ctx.log_client(format!("【错误】{e}"), LogLevel::Error);
+        }
+    });
+}
+
+pub fn run_client_named<F>(ctx: AppCtx, name: &'static str, fut: F)
+where
+    F: Future<Output = Result<(), String>> + 'static,
+{
+    spawn_local(async move {
+        match fut.await {
+            Ok(()) => {
+                ctx.log_client(format!("【已触发】{name}"), LogLevel::Info);
+            }
+            Err(e) => {
+                ctx.log_client(format!("【错误】{name}失败: {e}"), LogLevel::Error);
+            }
         }
     });
 }

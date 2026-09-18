@@ -303,7 +303,8 @@ pub fn render_qr_svg(content: &str) -> Option<String> {
     let code = qrcode::QrCode::new(content.as_bytes()).ok()?;
     let svg_str = code
         .render::<qrcode::render::svg::Color>()
-        .min_dimensions(176, 176)
+        .min_dimensions(300, 300)
+        .quiet_zone(false)
         .dark_color(qrcode::render::svg::Color("#16181d"))
         .light_color(qrcode::render::svg::Color("#ffffff"))
         .build();
@@ -407,19 +408,42 @@ pub fn LogPane() -> View {
     let height = create_signal(210);
     let is_resizing = create_signal(false);
 
-    // 只有中控客户端页会自动收日志：设备一多列表就要占地方。
-    // 切到别的页就展开回来，且只在切页、设备数刚过线这两下动手，之后不跟用户抢
+    let is_wide = create_signal({
+        web_sys::window()
+            .and_then(|w| w.inner_width().ok())
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0) >= 1300.0
+    });
+
+    // 监听窗口尺寸变动以感知分屏状态
+    {
+        let is_wide = is_wide.clone();
+        let cb = wasm_bindgen::closure::Closure::<dyn FnMut()>::wrap(Box::new(move || {
+            let w = web_sys::window()
+                .and_then(|w| w.inner_width().ok())
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            is_wide.set(w >= 1300.0);
+        }));
+        if let Some(w) = web_sys::window() {
+            let _ = w.add_event_listener_with_callback("resize", cb.as_ref().unchecked_ref());
+            cb.forget();
+        }
+    }
+
+    // 中控客户端分屏或设备较多时，默认自动收起日志；切到其他页自动恢复展开
     let prev = Rc::new(Cell::new((Page::Deploy, false)));
     create_effect(move || {
         let page = ctx.page.get();
-        let crowded = page == Page::Client && ctx.client.devices.get_clone().len() > 4;
-        let (prev_page, prev_crowded) = prev.get();
-        prev.set((page, crowded));
+        let split_or_crowded = page == Page::Client && (is_wide.get() || ctx.client.devices.get_clone().len() > 4);
+        let (prev_page, prev_state) = prev.get();
+        prev.set((page, split_or_crowded));
+
         if page != Page::Client {
             if page != prev_page {
                 minimized.set(false);
             }
-        } else if crowded && !prev_crowded {
+        } else if (page != prev_page && split_or_crowded) || (split_or_crowded && !prev_state) {
             minimized.set(true);
         }
     });

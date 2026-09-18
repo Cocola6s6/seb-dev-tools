@@ -41,6 +41,7 @@ pub fn run() {
             client::client_send_alarm,
             client::client_send_ping,
             client::client_send_reply,
+            client::client_get_bike_nos,
         ])
         .run(tauri::generate_context!())
         .expect("启动共享单车调试工具失败");

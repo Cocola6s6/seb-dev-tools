@@ -186,6 +186,88 @@ pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<BikeDe
     }))
 }
 
+/// 批量根据中控/ECU序列号查询绑定的车辆编号 (bike_no)。
+/// 容错处理：若数据库不可用或查不到，不抛错，仅返回已查到的映射。
+pub async fn batch_find_bike_nos_by_ecus(
+    cfg: &MysqlConfig,
+    ecu_nos: &[String],
+) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    let valid_ecus: Vec<String> = ecu_nos
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if valid_ecus.is_empty() {
+        return map;
+    }
+
+    let pool = match create_pool(cfg).await {
+        Ok(p) => p,
+        Err(_) => return map,
+    };
+
+    // 1. 优先从 bike_tb 批量查
+    for chunk in valid_ecus.chunks(50) {
+        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "select ecu_no, bike_no from bike_tb where ecu_no in ({placeholders}) and deleted = 0"
+        );
+        let mut query = sqlx::query(&sql);
+        for ecu in chunk {
+            query = query.bind(ecu);
+        }
+        if let Ok(rows) = query.fetch_all(&pool).await {
+            for row in rows {
+                if let (Ok(ecu), Ok(bike)) = (
+                    row.try_get::<String, _>("ecu_no"),
+                    row.try_get::<String, _>("bike_no"),
+                ) {
+                    let bike = bike.trim().to_string();
+                    if !bike.is_empty() {
+                        map.insert(ecu.trim().to_string(), bike);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 对于 bike_tb 未命中的，从 bike_ecu_relation_tb 补查
+    let missing: Vec<String> = valid_ecus
+        .iter()
+        .filter(|e| !map.contains_key(*e))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        for chunk in missing.chunks(50) {
+            let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "select ecu_no, bike_no from bike_ecu_relation_tb where ecu_no in ({placeholders}) and deleted = 0"
+            );
+            let mut query = sqlx::query(&sql);
+            for ecu in chunk {
+                query = query.bind(ecu);
+            }
+            if let Ok(rows) = query.fetch_all(&pool).await {
+                for row in rows {
+                    if let (Ok(ecu), Ok(bike)) = (
+                        row.try_get::<String, _>("ecu_no"),
+                        row.try_get::<String, _>("bike_no"),
+                    ) {
+                        let bike = bike.trim().to_string();
+                        if !bike.is_empty() {
+                            map.insert(ecu.trim().to_string(), bike);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pool.close().await;
+    map
+}
+
 pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResult, String> {
     let bike_no = req.bike_no.trim();
     let ecu_no = req.ecu_no.trim();

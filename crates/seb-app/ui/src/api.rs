@@ -391,3 +391,14 @@ pub async fn open_terminal_log(
     }
     invoke("open_terminal_log", A { device_no, bike_no }).await
 }
+
+pub async fn client_get_bike_nos(
+    device_nos: Vec<String>,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct A {
+        device_nos: Vec<String>,
+    }
+    invoke("client_get_bike_nos", A { device_nos }).await
+}
