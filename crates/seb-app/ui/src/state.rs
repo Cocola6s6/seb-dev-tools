@@ -1,4 +1,5 @@
 use crate::api;
+use gloo_timers::future::TimeoutFuture;
 use serde::{Deserialize, Serialize};
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -7,11 +8,30 @@ use wasm_bindgen_futures::spawn_local;
 pub const INNER_HOST: &str = "bike-seb-inner-test.costrip.cn";
 
 pub fn host_label(host: &str) -> String {
-    match host {
-        INNER_HOST => "内网".to_string(),
-        "bike-seb-test.costrip.cn" => "外网".to_string(),
-        "bike-seb.costrip.cn" => "正式".to_string(),
-        other => other.to_string(),
+    if host.contains("bike-seb-inner-test") {
+        "内网".to_string()
+    } else if host.contains("bike-seb-test") {
+        "外网".to_string()
+    } else if host.contains("bike-seb.costrip.cn") {
+        "正式".to_string()
+    } else if host.is_empty() {
+        "未配置".to_string()
+    } else {
+        host.to_string()
+    }
+}
+
+pub fn host_env_tag(host: &str) -> (&'static str, &'static str) {
+    if host.contains("bike-seb-inner-test") || host.contains("10.12.55.31") {
+        ("内网", "badge-env-inner")
+    } else if host.contains("bike-seb-test") || host.contains("140.143.180.28") {
+        ("外网", "badge-env-test")
+    } else if host.contains("bike-seb.costrip.cn") || host.contains("140.143.214.51") {
+        ("正式", "badge-env-prod")
+    } else if host.is_empty() {
+        ("未配置", "badge-env-none")
+    } else {
+        ("自定义", "badge-env-custom")
     }
 }
 
@@ -222,6 +242,7 @@ pub enum Page {
     Control,
     Ecu,
     Client,
+    Battery,
 }
 
 impl Page {
@@ -231,6 +252,7 @@ impl Page {
             Page::Control => 1,
             Page::Ecu => 2,
             Page::Client => 3,
+            Page::Battery => 4,
         }
     }
 
@@ -240,7 +262,12 @@ impl Page {
             Page::Control => "control",
             Page::Ecu => "ecu",
             Page::Client => "client",
+            Page::Battery => "battery",
         }
+    }
+
+    pub fn is_client(self) -> bool {
+        matches!(self, Page::Client | Page::Battery)
     }
 }
 
@@ -369,10 +396,14 @@ pub struct ClientCtx {
     pub trunk_latch: Signal<bool>,
     pub acc_on: Signal<bool>,
     pub deflection_angle: Signal<String>,
+    pub battery_no: Signal<String>,
+    pub battery_options: Signal<Vec<crate::api::BatteryOptionItem>>,
     pub alarm_type: Signal<String>,
     pub alarm_types: Signal<Vec<AlarmType>>,
     pub devices: Signal<Vec<DeviceState>>,
     pub selected: Signal<String>,
+    pub selected_set: Signal<Vec<String>>,
+    pub bike_map: Signal<std::collections::HashMap<String, String>>,
     /// 表单当前归属的设备：切设备时先置空，避免把上一台的值写进新设备
     pub owner: Signal<String>,
     pub device_no: Signal<String>,
@@ -398,10 +429,14 @@ impl ClientCtx {
             trunk_latch: create_signal(d.trunk_latch),
             acc_on: create_signal(d.acc_on),
             deflection_angle: create_signal(d.deflection_angle.to_string()),
+            battery_no: create_signal(d.battery_no.clone()),
+            battery_options: create_signal(Vec::new()),
             alarm_type: create_signal(String::new()),
             alarm_types: create_signal(Vec::new()),
             devices: create_signal(Vec::new()),
             selected: create_signal(String::new()),
+            selected_set: create_signal(Vec::new()),
+            bike_map: create_signal(std::collections::HashMap::new()),
             owner: create_signal(String::new()),
             device_no: create_signal(String::new()),
         }
@@ -423,7 +458,7 @@ impl ClientCtx {
         (host.trim().to_string(), port.trim().parse().unwrap_or(0))
     }
 
-    pub fn config(&self, device_no: String, battery_no: String) -> DeviceConfig {
+    pub fn config(&self, device_no: String) -> DeviceConfig {
         let (host, port) = self.split_gateway();
         DeviceConfig {
             device_no,
@@ -432,12 +467,34 @@ impl ClientCtx {
             soft_version: self.soft_version.get_clone(),
             heartbeat: self.heartbeat.get(),
             auto_reply: self.auto_reply.get(),
-            profile: self.profile(battery_no),
+            profile: self.profile(),
         }
     }
 
-    /// 切换设备：先摘掉表单归属再灌值，最后认领新设备
-    pub fn select(&self, device_no: &str) {
+    pub fn is_selected(&self, device_no: &str) -> bool {
+        let set = self.selected_set.get_clone();
+        if set.is_empty() {
+            self.selected.get_clone() == device_no
+        } else {
+            set.iter().any(|s| s == device_no)
+        }
+    }
+
+    pub fn selected_list(&self) -> Vec<String> {
+        let set = self.selected_set.get_clone();
+        if set.is_empty() {
+            let cur = self.selected.get_clone();
+            if cur.is_empty() {
+                vec![]
+            } else {
+                vec![cur]
+            }
+        } else {
+            set
+        }
+    }
+
+    pub fn load_device(&self, device_no: &str) {
         let found = self
             .devices
             .get_clone()
@@ -465,11 +522,62 @@ impl ClientCtx {
             self.trunk_latch.set(p.trunk_latch);
             self.acc_on.set(p.acc_on);
             self.deflection_angle.set(p.deflection_angle.to_string());
+            self.battery_no.set(p.battery_no);
         }
         self.owner.set(device_no.to_string());
     }
 
-    pub fn profile(&self, battery_no: String) -> SimProfile {
+    /// 切换设备：单选
+    pub fn select(&self, device_no: &str) {
+        self.selected_set.set(if device_no.is_empty() {
+            vec![]
+        } else {
+            vec![device_no.to_string()]
+        });
+        self.load_device(device_no);
+    }
+
+    /// Cmd / Ctrl 切换选中
+    pub fn toggle_select(&self, device_no: &str) {
+        let mut set = self.selected_set.get_clone();
+        if set.is_empty() {
+            let cur = self.selected.get_clone();
+            if !cur.is_empty() && cur != device_no {
+                set.push(cur);
+            }
+        }
+        if let Some(pos) = set.iter().position(|x| x == device_no) {
+            set.remove(pos);
+            if let Some(last) = set.last().cloned() {
+                self.load_device(&last);
+            }
+        } else {
+            set.push(device_no.to_string());
+            self.load_device(device_no);
+        }
+        self.selected_set.set(set);
+    }
+
+    /// Shift 连选
+    pub fn range_select(&self, target_no: &str) {
+        let devs = self.devices.get_clone();
+        let cur_no = self.selected.get_clone();
+        let start_idx = devs.iter().position(|d| d.config.device_no == cur_no).unwrap_or(0);
+        let end_idx = devs.iter().position(|d| d.config.device_no == target_no).unwrap_or(0);
+        let (min_i, max_i) = if start_idx <= end_idx {
+            (start_idx, end_idx)
+        } else {
+            (end_idx, start_idx)
+        };
+        let set: Vec<String> = devs[min_i..=max_i]
+            .iter()
+            .map(|d| d.config.device_no.clone())
+            .collect();
+        self.selected_set.set(set);
+        self.load_device(target_no);
+    }
+
+    pub fn profile(&self) -> SimProfile {
         SimProfile {
             coordinates: self.coordinates.get_clone().trim().to_string(),
             vehicle_state: self.vehicle_state.get_clone().parse().unwrap_or(0),
@@ -481,9 +589,246 @@ impl ClientCtx {
             trunk_latch: self.trunk_latch.get(),
             acc_on: self.acc_on.get(),
             deflection_angle: self.deflection_angle.get_clone().trim().parse().unwrap_or(5.0),
-            battery_no,
+            battery_no: self.battery_no.get_clone().trim().to_string(),
             reply_success: self.reply_success.get(),
             reply_with_location: self.reply_with_location.get(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BatteryConfig {
+    pub battery_no: String,
+    pub env: String,
+    pub host: String,
+    pub port: u16,
+    pub iccid: String,
+    pub coordinates: String,
+    pub hw_major_version: u8,
+    pub hw_minor_version: u8,
+    pub hw_rev_version: u8,
+    pub sw_major_version: u8,
+    pub sw_minor_version: u8,
+    pub sw_rev_version: u8,
+    pub heartbeat: bool,
+}
+
+impl Default for BatteryConfig {
+    fn default() -> Self {
+        Self {
+            battery_no: "CMAH030799497009".to_string(),
+            env: "内网".to_string(),
+            host: "10.12.55.31".to_string(),
+            port: 32402,
+            iccid: "89860409081870640660".to_string(),
+            coordinates: "116.302928,40.054926".to_string(),
+            hw_major_version: 2,
+            hw_minor_version: 1,
+            hw_rev_version: 3,
+            sw_major_version: 3,
+            sw_minor_version: 2,
+            sw_rev_version: 1,
+            heartbeat: true,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BatteryState {
+    pub connected: bool,
+    pub endpoint: String,
+    pub config: BatteryConfig,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BatteryDefaults {
+    pub battery_no: String,
+    pub env: String,
+    pub host: String,
+    pub port: u16,
+    pub iccid: String,
+    pub coordinates: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BatteryFrame {
+    pub battery_no: String,
+    pub dir: String,
+    pub summary: String,
+    pub hex: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BatteryPoll {
+    pub devices: Vec<BatteryState>,
+    pub frames: Vec<BatteryFrame>,
+}
+
+#[derive(Clone, Copy)]
+pub struct BatteryCtx {
+    pub gateway: Signal<String>,
+    pub heartbeat: Signal<bool>,
+    pub coordinates: Signal<String>,
+    pub iccid: Signal<String>,
+    pub devices: Signal<Vec<BatteryState>>,
+    pub selected: Signal<String>,
+    pub selected_set: Signal<Vec<String>>,
+    pub owner: Signal<String>,
+    pub battery_no: Signal<String>,
+}
+
+impl BatteryCtx {
+    fn new() -> Self {
+        let d = BatteryConfig::default();
+        Self {
+            gateway: create_signal(format!("{}:{}", d.host, d.port)),
+            heartbeat: create_signal(d.heartbeat),
+            coordinates: create_signal(d.coordinates),
+            iccid: create_signal(d.iccid),
+            devices: create_signal(Vec::new()),
+            selected: create_signal(d.battery_no.clone()),
+            selected_set: create_signal(Vec::new()),
+            owner: create_signal(String::new()),
+            battery_no: create_signal(d.battery_no),
+        }
+    }
+
+    pub fn adopt_defaults(&self, d: BatteryDefaults) {
+        self.battery_no.set(d.battery_no);
+        self.gateway.set(format!("{}:{}", d.host, d.port));
+        self.iccid.set(d.iccid);
+        self.coordinates.set(d.coordinates);
+    }
+
+    pub fn split_gateway(&self) -> (String, u16) {
+        let text = self.gateway.get_clone();
+        let (host, port) = text.trim().rsplit_once(':').unwrap_or((text.trim(), ""));
+        (host.trim().to_string(), port.trim().parse().unwrap_or(0))
+    }
+
+    pub fn is_selected(&self, battery_no: &str) -> bool {
+        let set = self.selected_set.get_clone();
+        if set.is_empty() {
+            self.selected.get_clone() == battery_no
+        } else {
+            set.iter().any(|s| s == battery_no)
+        }
+    }
+
+    pub fn selected_list(&self) -> Vec<String> {
+        let set = self.selected_set.get_clone();
+        if set.is_empty() {
+            let cur = self.selected.get_clone();
+            if cur.is_empty() {
+                vec![]
+            } else {
+                vec![cur]
+            }
+        } else {
+            set
+        }
+    }
+
+    pub fn load_device(&self, battery_no: &str) {
+        let found = self
+            .devices
+            .get_clone()
+            .into_iter()
+            .find(|d| d.config.battery_no == battery_no);
+        self.owner.set(String::new());
+        self.selected.set(battery_no.to_string());
+        self.battery_no.set(battery_no.to_string());
+        if let Some(st) = found {
+            let c = st.config;
+            self.gateway.set(format!("{}:{}", c.host, c.port));
+            self.iccid.set(c.iccid);
+            self.coordinates.set(c.coordinates);
+            self.heartbeat.set(c.heartbeat);
+        }
+        self.owner.set(battery_no.to_string());
+    }
+
+    pub fn select(&self, battery_no: &str) {
+        self.selected_set.set(if battery_no.is_empty() {
+            vec![]
+        } else {
+            vec![battery_no.to_string()]
+        });
+        self.load_device(battery_no);
+    }
+
+    pub fn toggle_select(&self, battery_no: &str) {
+        let mut set = self.selected_set.get_clone();
+        if set.is_empty() {
+            let cur = self.selected.get_clone();
+            if !cur.is_empty() && cur != battery_no {
+                set.push(cur);
+            }
+        }
+        if let Some(pos) = set.iter().position(|x| x == battery_no) {
+            set.remove(pos);
+            if let Some(last) = set.last().cloned() {
+                self.load_device(&last);
+            }
+        } else {
+            set.push(battery_no.to_string());
+            self.load_device(battery_no);
+        }
+        self.selected_set.set(set);
+    }
+
+    pub fn range_select(&self, target_no: &str) {
+        let devs = self.devices.get_clone();
+        let cur_no = self.selected.get_clone();
+        let start_idx = devs.iter().position(|d| d.config.battery_no == cur_no).unwrap_or(0);
+        let end_idx = devs.iter().position(|d| d.config.battery_no == target_no).unwrap_or(0);
+        let (min_i, max_i) = if start_idx <= end_idx {
+            (start_idx, end_idx)
+        } else {
+            (end_idx, start_idx)
+        };
+        let set: Vec<String> = devs[min_i..=max_i]
+            .iter()
+            .map(|d| d.config.battery_no.clone())
+            .collect();
+        self.selected_set.set(set);
+        self.load_device(target_no);
+    }
+
+    #[allow(dead_code)]
+    pub fn current(&self) -> Option<BatteryState> {
+        let no = self.selected.get_clone();
+        self.devices.get_clone().into_iter().find(|d| d.config.battery_no == no)
+    }
+
+    pub fn config(&self, battery_no: String) -> BatteryConfig {
+        let (host, port) = self.split_gateway();
+        let env = match host.as_str() {
+            "10.12.55.31" => "内网",
+            "140.143.180.28" => "外网",
+            "140.143.214.51" => "正式",
+            _ => "自定义",
+        }
+        .to_string();
+        BatteryConfig {
+            battery_no,
+            env,
+            host,
+            port,
+            iccid: self.iccid.get_clone().trim().to_string(),
+            coordinates: self.coordinates.get_clone().trim().to_string(),
+            hw_major_version: 2,
+            hw_minor_version: 1,
+            hw_rev_version: 3,
+            sw_major_version: 3,
+            sw_minor_version: 2,
+            sw_rev_version: 1,
+            heartbeat: self.heartbeat.get(),
         }
     }
 }
@@ -510,6 +855,7 @@ pub struct DeployOptions {
 pub struct AppCtx {
     pub page: Signal<Page>,
     pub client: ClientCtx,
+    pub battery: BatteryCtx,
     pub cfg: Signal<AppConfig>,
     pub device_no: Signal<String>,
     pub bike_no: Signal<String>,
@@ -521,6 +867,7 @@ pub struct AppCtx {
     pub ecu_params: Signal<Vec<EcuParam>>,
     pub control_types: Signal<Vec<ControlType>>,
     pub deploy_options: Signal<DeployOptions>,
+    pub toast_msg: Signal<Option<String>>,
 }
 
 const MAX_LOGS: usize = 500;
@@ -530,6 +877,7 @@ impl AppCtx {
         Self {
             page: create_signal(Page::Deploy),
             client: ClientCtx::new(),
+            battery: BatteryCtx::new(),
             cfg: create_signal(AppConfig::default()),
             device_no: create_signal(String::new()),
             bike_no: create_signal(String::new()),
@@ -541,7 +889,18 @@ impl AppCtx {
             ecu_params: create_signal(Vec::new()),
             control_types: create_signal(Vec::new()),
             deploy_options: create_signal(DeployOptions::default()),
+            toast_msg: create_signal(None),
         }
+    }
+
+    pub fn toast(&self, msg: impl Into<String>) {
+        let msg = msg.into();
+        self.toast_msg.set(Some(msg));
+        let toast_sig = self.toast_msg.clone();
+        spawn_local(async move {
+            TimeoutFuture::new(1600).await;
+            toast_sig.set(None);
+        });
     }
 
     pub fn current_config(&self) -> AppConfig {
@@ -575,6 +934,21 @@ impl AppCtx {
     pub fn log_client(&self, text: impl Into<String>, level: LogLevel) {
         let device = self.client.selected.get_clone();
         self.log_tinted(text, level, Page::Client.tint(), None, device);
+    }
+
+    /// 电池客户端的收发固定用电池客户端配色
+    pub fn log_battery(&self, text: impl Into<String>, level: LogLevel) {
+        let device = self.battery.selected.get_clone();
+        self.log_tinted(text, level, Page::Battery.tint(), None, device);
+    }
+
+    pub fn log_battery_frame(&self, dir: &str, battery_no: &str, text: impl Into<String>) {
+        let dir = match dir {
+            "up" => Some("up"),
+            "down" => Some("down"),
+            _ => None,
+        };
+        self.log_tinted(text, LogLevel::Info, Page::Battery.tint(), dir, battery_no.to_string());
     }
 
     /// 报文日志：上行还是下行、是哪台设备，都要一眼能分出来

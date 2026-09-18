@@ -4,9 +4,12 @@ mod components;
 mod pages;
 mod state;
 
-use components::{InstancePill, LogPane, QrNavButton};
+use components::{GlobalToast, InstancePill, LogPane, QrNavButton};
 use gloo_timers::future::TimeoutFuture;
-use pages::{client::ClientPage, control::ControlPage, deploy::DeployPage, ecu::EcuPage};
+use pages::{
+    battery::BatteryPage, client::ClientPage, control::ControlPage, deploy::DeployPage,
+    ecu::EcuPage,
+};
 use state::{host_label, AppCtx, FrameLog, Page};
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -59,7 +62,7 @@ fn App() -> View {
                 if !no.is_empty() {
                     let config = ctx
                         .client
-                        .config(no.clone(), ctx.battery_no.get_clone().trim().to_string());
+                        .config(no.clone());
                     match api::client_update_device(config).await {
                         Ok(list) => {
                             ctx.client.devices.set(list);
@@ -71,13 +74,37 @@ fn App() -> View {
             }
             Err(e) => ctx.log_error(format!("【错误】读取模拟设备清单失败: {e}")),
         }
+        if let Ok(d) = api::battery_defaults().await {
+            ctx.battery.adopt_defaults(d);
+        }
+        match api::battery_devices().await {
+            Ok(list) if !list.is_empty() => {
+                let first = list[0].config.battery_no.clone();
+                ctx.battery.devices.set(list);
+                ctx.battery.select(&first);
+            }
+            Ok(_) => {
+                let no = ctx.battery_no.get_clone().trim().to_string();
+                let no = if no.is_empty() {
+                    "CMAH030799497009".to_string()
+                } else {
+                    no
+                };
+                let config = ctx.battery.config(no.clone());
+                if let Ok(list) = api::battery_update_device(config).await {
+                    ctx.battery.devices.set(list);
+                    ctx.battery.select(&no);
+                }
+            }
+            Err(e) => ctx.log_error(format!("【错误】读取电池模拟设备清单失败: {e}")),
+        }
         if let Ok(list) = api::list_alarm_types().await {
             if let Some(first) = list.first() {
                 ctx.client.alarm_type.set(first.code.to_string());
             }
             ctx.client.alarm_types.set(list);
         }
-        ctx.log_info("就绪。可先进行「一键接入」将车辆接入内网，随后进行中控与 ECU 调试");
+        ctx.log_info("就绪。可先进行「一键接入」将车辆接入内网，随后进行中控、ECU 与电池调试");
     });
 
     spawn_local(async move {
@@ -90,6 +117,14 @@ fn App() -> View {
                 }
                 for f in poll.frames {
                     ctx.log_frame(&f.dir, &f.device_no, frame_line(&f));
+                }
+            }
+            if let Ok(bpoll) = api::battery_poll().await {
+                if bpoll.devices != ctx.battery.devices.get_clone() {
+                    ctx.battery.devices.set(bpoll.devices);
+                }
+                for f in bpoll.frames {
+                    ctx.log_battery_frame(&f.dir, &f.battery_no, format!("{} | {}", f.summary, f.hex));
                 }
             }
         }
@@ -107,7 +142,7 @@ fn App() -> View {
         }
     });
 
-    let show_pills = move || ctx.page.get() != Page::Client;
+    let show_pills = move || ctx.page.get() != Page::Client && ctx.page.get() != Page::Battery;
     // 可能同时连不同环境，按网关地址分组，别把两个网关的在线数混在一起
     let groups = create_memo(move || {
         let mut groups: Vec<(String, usize, usize)> = Vec::new();
@@ -136,6 +171,7 @@ fn App() -> View {
                         NavItem(page=Page::Control, label="中控指令")
                         NavItem(page=Page::Ecu, label="中控配置")
                         NavItem(page=Page::Client, label="中控客户端")
+                        NavItem(page=Page::Battery, label="电池客户端")
                     }
                 }
                 div(class="pills") {
@@ -168,17 +204,19 @@ fn App() -> View {
             }
 
             div(class="main") {
-                // 四个页面常驻，靠显隐切换：卸载会销毁页面里的信号，
+                // 五个页面常驻，靠显隐切换：卸载会销毁页面里的信号，
                 // 正在飞的异步回来一读就 panic，表单填的内容也会丢
                 div(class="content") {
                     div(class=show(ctx, Page::Deploy))  { DeployPage {} }
                     div(class=show(ctx, Page::Control)) { ControlPage {} }
                     div(class=show(ctx, Page::Ecu))     { EcuPage {} }
                     div(class=show(ctx, Page::Client))  { ClientPage {} }
+                    div(class=show(ctx, Page::Battery)) { BatteryPage {} }
                 }
             }
 
             LogPane {}
+            GlobalToast {}
         }
     }
 }

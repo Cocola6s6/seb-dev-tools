@@ -1,6 +1,9 @@
 mod commands;
 
-use commands::{client, config as config_cmd, deploy, ecu as ecu_cmd, instance, send, terminal, AppState};
+use commands::{
+    battery as battery_cmd, client, config as config_cmd, deploy, ecu as ecu_cmd, instance, send,
+    terminal, AppState,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -40,6 +43,20 @@ pub fn run() {
             client::client_send_ping,
             client::client_send_reply,
             client::client_get_bike_nos,
+            client::client_load_batteries,
+            battery_cmd::battery_defaults,
+            battery_cmd::battery_devices,
+            battery_cmd::battery_update_device,
+            battery_cmd::battery_remove_device,
+            battery_cmd::battery_connect,
+            battery_cmd::battery_disconnect,
+            battery_cmd::battery_poll,
+            battery_cmd::battery_send_login,
+            battery_cmd::battery_send_location,
+            battery_cmd::battery_send_alarm,
+            battery_cmd::battery_send_runtime,
+            battery_cmd::battery_send_ping,
+            battery_cmd::battery_send_logout,
         ])
         .run(tauri::generate_context!())
         .expect("启动共享单车调试工具失败");

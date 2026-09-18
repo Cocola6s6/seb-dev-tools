@@ -83,6 +83,55 @@ pub fn DeployPage() -> View {
         }
     });
 
+    let battery_dropdown_open = create_signal(false);
+
+    create_effect(move || {
+        if ctx.client.battery_options.get_clone().is_empty() {
+            spawn_local(async move {
+                if let Ok(list) = api::client_load_batteries().await {
+                    ctx.client.battery_options.set(list);
+                }
+            });
+        }
+    });
+
+    let ordered_batteries = create_memo(move || {
+        let cur_bike = ctx.bike_no.get_clone().trim().to_string();
+        let raw = ctx.client.battery_options.get_clone();
+        let mut list = raw;
+
+        list.sort_by(|a, b| {
+            let a_cur = !cur_bike.is_empty() && a.bound_bike_no.as_deref().map(|s| s.trim()) == Some(&cur_bike);
+            let b_cur = !cur_bike.is_empty() && b.bound_bike_no.as_deref().map(|s| s.trim()) == Some(&cur_bike);
+            b_cur
+                .cmp(&a_cur)
+                .then_with(|| a.bound_bike_no.is_none().cmp(&b.bound_bike_no.is_none()).reverse())
+                .then_with(|| a.battery_no.cmp(&b.battery_no))
+        });
+        list
+    });
+
+    let filtered_batteries = create_memo(move || {
+        let all = ordered_batteries.get_clone();
+        let query = ctx.battery_no.get_clone().trim().to_lowercase();
+        if query.is_empty() {
+            all
+        } else {
+            all.into_iter()
+                .filter(|item| {
+                    item.battery_no.to_lowercase().contains(&query)
+                        || item
+                            .bound_bike_no
+                            .as_deref()
+                            .map(|s| s.to_lowercase().contains(&query))
+                            .unwrap_or(false)
+                })
+                .collect()
+        }
+    });
+
+
+
     create_effect(move || {
         let cfg = ctx.cfg.get_clone();
         if loaded.get() {
@@ -300,16 +349,89 @@ pub fn DeployPage() -> View {
                     }
                     div(class="field") {
                         label { "电池编号 (batteryNo)" }
-                        input(
-                            r#type="text",
-                            bind:value=ctx.battery_no,
-                            placeholder="如 CTFG024B2E6S4012",
-                            on:keydown=move |ev: web_sys::KeyboardEvent| {
-                                if ev.key() == "Tab" && !ev.shift_key() && ctx.battery_no.get_clone().trim().is_empty() {
-                                    ctx.battery_no.set("CTFG024B2E6S4012".to_string());
+                        div(class="battery-combo-wrapper") {
+                            input(
+                                r#type="text",
+                                bind:value=ctx.battery_no,
+                                placeholder="输入电池编号或下拉选择",
+                                on:focus=move |_| battery_dropdown_open.set(true),
+                                on:click=move |_| battery_dropdown_open.set(true),
+                                on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                    if ev.key() == "Tab" && !ev.shift_key() && ctx.battery_no.get_clone().trim().is_empty() {
+                                        ctx.battery_no.set("CTFG024B2E6S4012".to_string());
+                                    }
                                 }
-                            }
-                        )
+                            )
+                            (if battery_dropdown_open.get() {
+                                let bats_empty = filtered_batteries.get_clone().is_empty();
+                                let bats_cnt = filtered_batteries.get_clone().len();
+                                let cur_bike = ctx.bike_no.get_clone().trim().to_string();
+                                view! {
+                                    div(class="combo-backdrop", on:click=move |_| battery_dropdown_open.set(false)) {}
+                                    div(class="battery-dropdown-popover") {
+                                        (if bats_empty {
+                                            view! {
+                                                div(class="device-dropdown-empty") {
+                                                    "无匹配电池"
+                                                }
+                                            }
+                                        } else {
+                                            view! {
+                                                div(class="device-dropdown-header") {
+                                                    span { "选择电池" }
+                                                    span(class="device-dropdown-count") {
+                                                        (format!("共 {bats_cnt} 块"))
+                                                    }
+                                                }
+                                                div(class="battery-dropdown-items") {
+                                                    Indexed(
+                                                        list=filtered_batteries,
+                                                        view=move |item: crate::api::BatteryOptionItem| {
+                                                            let b_no = item.battery_no.clone();
+                                                            let is_cur = ctx.battery_no.get_clone().trim() == b_no;
+                                                            let item_cls = if is_cur {
+                                                                "battery-dropdown-item active"
+                                                            } else {
+                                                                "battery-dropdown-item"
+                                                            };
+                                                            let is_cur_bound = !cur_bike.is_empty() && item.bound_bike_no.as_deref().map(|s| s.trim()) == Some(&cur_bike);
+                                                            let bound_badge = match &item.bound_bike_no {
+                                                                Some(bike) if is_cur_bound => {
+                                                                    let bike = bike.clone();
+                                                                    view! { span(class="bat-binding bound-cur") { (format!("已被 {bike} 绑定")) } }
+                                                                }
+                                                                Some(bike) if !bike.trim().is_empty() => {
+                                                                    let bike = bike.clone();
+                                                                    view! { span(class="bat-binding bound-other") { (format!("已被 {bike} 绑定")) } }
+                                                                }
+                                                                _ => {
+                                                                    view! { span(class="bat-binding") { "未绑定" } }
+                                                                }
+                                                            };
+                                                            let pick_no = b_no.clone();
+                                                            view! {
+                                                                div(
+                                                                    class=item_cls,
+                                                                    on:click=move |_| {
+                                                                        ctx.battery_no.set(pick_no.clone());
+                                                                        battery_dropdown_open.set(false);
+                                                                    }
+                                                                ) {
+                                                                    span(class="bat-no") { (b_no) }
+                                                                    (bound_badge)
+                                                                }
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        })
+                                    }
+                                }
+                            } else {
+                                view! {}
+                            })
+                        }
                     }
                     div(class="field") {
                         label { "城市 (cityId)" }

@@ -202,3 +202,8 @@ pub async fn client_get_bike_nos(device_nos: Vec<String>) -> std::collections::H
     }
     map
 }
+
+#[tauri::command]
+pub async fn client_load_batteries() -> Vec<seb_core::db::BatteryOptionItem> {
+    seb_core::db::load_battery_options(&seb_core::config::mysql()).await
+}

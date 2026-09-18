@@ -1,5 +1,5 @@
 use crate::api;
-use crate::state::{AppCtx, LogEntry, Page, INNER_HOST};
+use crate::state::{AppCtx, LogEntry, INNER_HOST};
 use gloo_timers::future::TimeoutFuture;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -329,7 +329,7 @@ pub fn DeviceBar() -> View {
                 div(class="device-select-wrapper") {
                     button(
                         class=move || if open.get() { "device-select-trigger-btn active" } else { "device-select-trigger-btn" },
-                        title="查看并快捷选择已在模拟器添加的中控设备",
+                        title="选择设备",
                         on:click=move |ev: web_sys::MouseEvent| {
                             ev.stop_propagation();
                             open.set(!open.get());
@@ -369,7 +369,7 @@ pub fn DeviceBar() -> View {
                                 } else {
                                     view! {
                                         div(class="device-dropdown-header") {
-                                            span { "快捷载入设备" }
+                                            span { "选择设备" }
                                             span(class="device-dropdown-count") {
                                                 (format!("共 {} 台", inner_devices.get_clone().len()))
                                             }
@@ -439,16 +439,41 @@ pub fn QrNavButton() -> View {
     let open = create_signal(false);
     let copied = create_signal(false);
 
-    let bike_no = move || {
-        let b = ctx.bike_no.get_clone().trim().to_string();
-        if b.is_empty() {
-            "A60004000180".to_string()
+    let is_battery = move || ctx.page.get() == crate::state::Page::Battery;
+
+    let display_title = move || {
+        if is_battery() {
+            "电池二维码"
         } else {
-            b
+            "车辆二维码"
         }
     };
 
-    let qr_url = move || format!("https://gycx.cn?s={}", bike_no());
+    let display_no = move || {
+        if is_battery() {
+            let b = ctx.battery.selected.get_clone();
+            if b.trim().is_empty() {
+                "CMAH030799497009".to_string()
+            } else {
+                b
+            }
+        } else {
+            let b = ctx.bike_no.get_clone().trim().to_string();
+            if b.is_empty() {
+                "A60004000180".to_string()
+            } else {
+                b
+            }
+        }
+    };
+
+    let qr_url = move || {
+        if is_battery() {
+            format!("https://cosbike.net.cn/qr?{}", display_no())
+        } else {
+            format!("https://gycx.cn?s={}", display_no())
+        }
+    };
 
     let qr_data_url = create_memo(move || {
         let svg = render_qr_svg(&qr_url()).unwrap_or_default();
@@ -470,7 +495,7 @@ pub fn QrNavButton() -> View {
         div(class="nav-qr-container") {
             button(
                 class=move || if open.get() { "nav-qr-icon-btn active" } else { "nav-qr-icon-btn" },
-                title="车辆二维码",
+                title=move || display_title(),
                 on:click=move |_| open.set(!open.get())
             ) {
                 svg(
@@ -487,13 +512,13 @@ pub fn QrNavButton() -> View {
                     div(class="popover-backdrop", on:click=move |_| open.set(false)) {}
                     div(class="nav-qr-popover") {
                         div(class="nav-qr-head") {
-                            span { "车辆二维码" }
+                            span { (display_title()) }
                         }
                         div(class="qr-svg-container") {
                             img(src=qr_data_url, alt="二维码", style="width:176px;height:176px;display:block;")
                         }
                         div(class="nav-qr-foot") {
-                            span(class="qr-bike-no") { (bike_no()) }
+                            span(class="qr-bike-no") { (display_no()) }
                             button(
                                 class=move || if copied.get() { "qr-copy-btn copied" } else { "qr-copy-btn" },
                                 title=move || if copied.get() { "已复制" } else { "复制链接" },
@@ -553,19 +578,26 @@ pub fn LogPane() -> View {
         }
     }
 
-    // 中控客户端分屏或设备较多时，默认自动收起日志；切到其他页自动恢复展开
-    let prev = Rc::new(Cell::new((Page::Deploy, false)));
+    // 日志收起逻辑：
+    // 1. 用户手动收起或已收起时，常规功能页切换不主动展开；
+    // 2. 只有从客户端页面（中控/电池客户端）切换回其它功能页时，才主动恢复展开日志；
+    // 3. 切入客户端页面时，若处于分屏或多设备场景则自动收起。
+    let prev = Rc::new(Cell::new((ctx.page.get(), false)));
     create_effect(move || {
         let page = ctx.page.get();
-        let split_or_crowded = page == Page::Client && (is_wide.get() || ctx.client.devices.get_clone().len() > 4);
+        let split_or_crowded = page.is_client() && (is_wide.get() || ctx.client.devices.get_clone().len() > 4 || ctx.battery.devices.get_clone().len() > 4);
         let (prev_page, prev_state) = prev.get();
         prev.set((page, split_or_crowded));
 
-        if page != Page::Client {
-            if page != prev_page {
+        if page != prev_page {
+            if prev_page.is_client() && !page.is_client() {
+                // 从客户端页面切换回其它功能页：主动展开日志
                 minimized.set(false);
+            } else if !prev_page.is_client() && page.is_client() && split_or_crowded {
+                // 切入客户端页面且处于分屏/多设备环境：自动收起日志
+                minimized.set(true);
             }
-        } else if (page != prev_page && split_or_crowded) || (split_or_crowded && !prev_state) {
+        } else if page.is_client() && split_or_crowded && !prev_state {
             minimized.set(true);
         }
     });
@@ -725,3 +757,27 @@ pub fn LogPane() -> View {
         }
     }
 }
+
+#[component]
+pub fn GlobalToast() -> View {
+    let ctx = use_context::<AppCtx>();
+    view! {
+        (if let Some(msg) = ctx.toast_msg.get_clone() {
+            view! {
+                div(class="global-toast-container") {
+                    div(class="global-toast") {
+                        div(class="global-toast-icon-wrap") {
+                            svg(class="global-toast-icon", viewBox="0 0 24 24", fill="currentColor") {
+                                path(d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z") {}
+                            }
+                        }
+                        span(class="global-toast-text") { (msg) }
+                    }
+                }
+            }
+        } else {
+            view! {}
+        })
+    }
+}
+

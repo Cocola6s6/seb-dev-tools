@@ -14,3 +14,4 @@ thiserror  = { workspace = true }
 amqprs     = { workspace = true }
 dirs       = { workspace = true }
 sqlx       = { workspace = true }
+chrono     = { workspace = true }

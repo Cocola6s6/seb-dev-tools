@@ -25,16 +25,22 @@ pub fn EcuPage() -> View {
             .collect::<Vec<EcuParam>>()
     });
 
-    // 输入正好命中某个参数名就直接选中，省得再点一次列表
+    // 输入正好命中某个参数名或中文名就直接选中，省得再点一次列表
     create_effect(move || {
         let kw = keyword.get_clone().trim().to_uppercase();
+        if kw.is_empty() {
+            param_key.set(String::new());
+            return;
+        }
         let hit = ctx
             .ecu_params
             .get_clone()
             .into_iter()
-            .find(|p| p.key.to_uppercase() == kw)
+            .find(|p| p.key.to_uppercase() == kw || p.name.trim().to_uppercase() == kw)
             .map(|p| p.key);
-        param_key.set(hit.unwrap_or_default());
+        if let Some(k) = hit {
+            param_key.set(k);
+        }
     });
 
     let description = create_memo(move || {
@@ -47,19 +53,24 @@ pub fn EcuPage() -> View {
             .unwrap_or_default()
     });
 
+    // 仅在切换参数项（param_key 变更）时带出该项的默认值，不监听 param_value 自身避免用户无法清空输入
+    let prev_key = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
     create_effect(move || {
         let key = param_key.get_clone();
-        if op_mode.get_clone() != "设置" || !param_value.get_clone().trim().is_empty() {
-            return;
-        }
-        if let Some(def) = ctx
-            .ecu_params
-            .get_clone()
-            .into_iter()
-            .find(|p| p.key == key)
-            .and_then(|p| p.default_value)
-        {
-            param_value.set(def);
+        let old = prev_key.borrow().clone();
+        if !key.is_empty() && key != old {
+            *prev_key.borrow_mut() = key.clone();
+            if op_mode.get_clone() == "设置" {
+                if let Some(def) = ctx
+                    .ecu_params
+                    .get_clone()
+                    .into_iter()
+                    .find(|p| p.key == key)
+                    .and_then(|p| p.default_value)
+                {
+                    param_value.set(def);
+                }
+            }
         }
     });
 
@@ -116,6 +127,7 @@ pub fn EcuPage() -> View {
                                             let key = p.key.clone();
                                             let pick = move |_| {
                                                 keyword.set(key.clone());
+                                                param_key.set(key.clone());
                                                 open.set(false);
                                             };
                                             view! {

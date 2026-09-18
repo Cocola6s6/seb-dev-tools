@@ -42,10 +42,29 @@ fn url(cfg: &MysqlConfig) -> String {
     )
 }
 
-/// 创建 MySQL 连接池（强制设置 session 时区为 +08:00，与 Java 后端对齐，避免 now() 产生时差）
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
+static POOL_CACHE: OnceLock<tokio::sync::Mutex<HashMap<String, Pool<MySql>>>> = OnceLock::new();
+
+/// 获取或复用全局 MySQL 连接池（强制设置 session 时区为 +08:00，与 Java 后端对齐，避免 now() 产生时差）
+async fn get_or_create_pool(cfg: &MysqlConfig) -> Result<Pool<MySql>, String> {
+    let pool_map = POOL_CACHE.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()));
+    let target_url = url(cfg);
+    let mut guard = pool_map.lock().await;
+    if let Some(p) = guard.get(&target_url) {
+        if !p.is_closed() {
+            return Ok(p.clone());
+        }
+    }
+    let p = create_pool(cfg).await?;
+    guard.insert(target_url, p.clone());
+    Ok(p)
+}
+
 async fn create_pool(cfg: &MysqlConfig) -> Result<Pool<MySql>, String> {
     MySqlPoolOptions::new()
-        .max_connections(2)
+        .max_connections(4)
         .acquire_timeout(CONNECT_TIMEOUT)
         .after_connect(|conn, _meta| {
             Box::pin(async move {
@@ -59,12 +78,11 @@ async fn create_pool(cfg: &MysqlConfig) -> Result<Pool<MySql>, String> {
 }
 
 pub async fn check_health(cfg: &MysqlConfig) -> Result<bool, String> {
-    let pool = create_pool(cfg).await?;
+    let pool = get_or_create_pool(cfg).await?;
     let _ = sqlx::query("select 1")
         .fetch_one(&pool)
         .await
         .map_err(|e| format!("MySQL 检查失败: {e}"))?;
-    pool.close().await;
     Ok(true)
 }
 
@@ -92,7 +110,7 @@ pub struct BikeDetail {
 }
 
 pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<BikeDetail>, String> {
-    let pool = create_pool(cfg).await?;
+    let pool = get_or_create_pool(cfg).await?;
     let row = sqlx::query(
         "select ecu_no, city_id, bike_type_id, supplier_id, dealer_id, device_company_id, \
          batch_no, motor_no, frame_no, has_helmet, has_trunk, road_status, business_status \
@@ -104,7 +122,6 @@ pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<BikeDe
     .map_err(|e| format!("查询 bike_tb 失败: {e}"))?;
 
     let Some(r) = row else {
-        pool.close().await;
         return Ok(None);
     };
 
@@ -155,8 +172,6 @@ pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<BikeDe
         (String::new(), 0)
     };
 
-    pool.close().await;
-
     // 查询 Redis 中控在线状态
     let redis_instance = crate::redis::instance_of(&ecu_no).await.unwrap_or(None);
     let online_status = match redis_instance {
@@ -202,7 +217,7 @@ pub async fn batch_find_bike_nos_by_ecus(
         return map;
     }
 
-    let pool = match create_pool(cfg).await {
+    let pool = match get_or_create_pool(cfg).await {
         Ok(p) => p,
         Err(_) => return map,
     };
@@ -264,7 +279,6 @@ pub async fn batch_find_bike_nos_by_ecus(
         }
     }
 
-    pool.close().await;
     map
 }
 
@@ -285,7 +299,7 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
         return Err("城市 ID 不能小于 0".to_string());
     }
 
-    let goods_pool = create_pool(cfg).await?;
+    let goods_pool = get_or_create_pool(cfg).await?;
     let mut tx = goods_pool
         .begin()
         .await
@@ -415,11 +429,10 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
     ));
 
     tx.commit().await.map_err(|e| format!("提交事务失败: {e}"))?;
-    goods_pool.close().await;
 
     let mut report_cfg = cfg.clone();
     report_cfg.database = "seb_report_db".to_string();
-    if let Ok(report_pool) = create_pool(&report_cfg).await {
+    if let Ok(report_pool) = get_or_create_pool(&report_cfg).await {
         let report_exist: Option<i64> = sqlx::query("select code from bike_ecu_relation_tb where bike_no = ? limit 1")
             .bind(bike_no)
             .fetch_optional(&report_pool)
@@ -492,8 +505,6 @@ pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResu
             .await;
             steps.push("seb_report_db.bike_basic_tb: 写入初始设备基础信息（connect=1）".to_string());
         }
-
-        report_pool.close().await;
     }
 
     match crate::redis::sync_bike_deploy_cache(ecu_no, bike_no, req.city_id).await {
@@ -547,7 +558,7 @@ pub fn default_deploy_options() -> DeployOptions {
 
 pub async fn load_deploy_options(cfg: &MysqlConfig) -> DeployOptions {
     let mut defaults = default_deploy_options();
-    let pool = match create_pool(cfg).await {
+    let pool = match get_or_create_pool(cfg).await {
         Ok(p) => p,
         Err(_) => return defaults,
     };
@@ -674,9 +685,48 @@ pub async fn load_deploy_options(cfg: &MysqlConfig) -> DeployOptions {
         }
     }
 
-    pool.close().await;
     defaults
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BatteryOptionItem {
+    pub battery_no: String,
+    pub bound_bike_no: Option<String>,
+}
+
+pub async fn load_battery_options(cfg: &MysqlConfig) -> Vec<BatteryOptionItem> {
+    let pool = match get_or_create_pool(cfg).await {
+        Ok(p) => p,
+        Err(_) => return Vec::new(),
+    };
+
+    let sql = "SELECT b.battery_no, MAX(bb.bike_no) AS bike_no \
+               FROM seb_goods_db.battery_tb b \
+               LEFT JOIN seb_goods_db.bike_battery_tb bb ON b.battery_no = bb.battery_no \
+               WHERE b.deleted = 0 \
+               GROUP BY b.battery_no \
+               ORDER BY b.battery_no ASC";
+
+    let items = if let Ok(rows) = sqlx::query(sql).fetch_all(&pool).await {
+        rows.into_iter()
+            .map(|r| {
+                let battery_no = r.try_get::<String, _>("battery_no").unwrap_or_default();
+                let bound_bike_no = r.try_get::<String, _>("bike_no").ok().filter(|s| !s.trim().is_empty());
+                BatteryOptionItem {
+                    battery_no,
+                    bound_bike_no,
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    items
+}
+
+
 
 #[cfg(test)]
 mod tests {

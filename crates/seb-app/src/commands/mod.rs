@@ -1,9 +1,11 @@
+use seb_core::battery::BatteryFleet;
 use seb_core::device::DeviceFleet;
 use seb_core::mq::PublishRecord;
 use seb_core::{AppConfig, Publisher};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+pub mod battery;
 pub mod client;
 pub mod config;
 pub mod deploy;
@@ -15,15 +17,19 @@ pub mod terminal;
 pub struct AppState {
     pub publisher: Mutex<Publisher>,
     pub devices: DeviceFleet,
+    pub batteries: BatteryFleet,
 }
 
 impl AppState {
     pub fn new(cfg: AppConfig) -> Self {
         let devices = DeviceFleet::default();
         devices.seed(cfg.sim_devices.clone());
+        let batteries = BatteryFleet::default();
+        batteries.seed(cfg.sim_batteries.clone());
         Self {
             publisher: Mutex::new(Publisher::new(cfg)),
             devices,
+            batteries,
         }
     }
 }

@@ -77,6 +77,7 @@ pub struct AppConfig {
     pub city_id: i64,
     pub deploy: DeployDefaults,
     pub sim_devices: Vec<crate::device::DeviceConfig>,
+    pub sim_batteries: Vec<crate::battery::BatteryConfig>,
 }
 
 impl Default for AppConfig {
@@ -89,6 +90,7 @@ impl Default for AppConfig {
             city_id: 0,
             deploy: DeployDefaults::default(),
             sim_devices: Vec::new(),
+            sim_batteries: Vec::new(),
         }
     }
 }

@@ -1,3 +1,4 @@
+pub mod battery;
 pub mod client;
 pub mod control;
 pub mod deploy;

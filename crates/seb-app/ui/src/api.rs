@@ -1,8 +1,9 @@
 use crate::state::{
-    AlarmType, AppConfig, BikeDetail, BorrowOptions, ClientDefaults, ClientPoll, ConnState, ControlType,
-    DeployOptions, DeployResult, DeviceConfig, DeviceState, EcuParam, SendResult,
+    AlarmType, AppConfig, BatteryConfig, BatteryDefaults, BatteryPoll, BatteryState, BikeDetail,
+    BorrowOptions, ClientDefaults, ClientPoll, ConnState, ControlType, DeployOptions, DeployResult,
+    DeviceConfig, DeviceState, EcuParam, SendResult,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
@@ -398,4 +399,79 @@ pub async fn client_get_bike_nos(
         device_nos: Vec<String>,
     }
     invoke("client_get_bike_nos", A { device_nos }).await
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BatteryOptionItem {
+    pub battery_no: String,
+    pub bound_bike_no: Option<String>,
+}
+
+pub async fn client_load_batteries() -> Result<Vec<BatteryOptionItem>, String> {
+    invoke("client_load_batteries", Empty {}).await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatteryArg<'a> {
+    battery_no: &'a str,
+}
+
+pub async fn battery_defaults() -> Result<BatteryDefaults, String> {
+    invoke("battery_defaults", Empty {}).await
+}
+
+pub async fn battery_devices() -> Result<Vec<BatteryState>, String> {
+    invoke("battery_devices", Empty {}).await
+}
+
+pub async fn battery_update_device(config: BatteryConfig) -> Result<Vec<BatteryState>, String> {
+    #[derive(Serialize)]
+    struct A {
+        config: BatteryConfig,
+    }
+    invoke("battery_update_device", A { config }).await
+}
+
+pub async fn battery_remove_device(battery_no: &str) -> Result<Vec<BatteryState>, String> {
+    invoke("battery_remove_device", BatteryArg { battery_no }).await
+}
+
+pub async fn battery_connect(battery_no: &str) -> Result<BatteryState, String> {
+    invoke("battery_connect", BatteryArg { battery_no }).await
+}
+
+pub async fn battery_disconnect(battery_no: &str) -> Result<BatteryState, String> {
+    invoke("battery_disconnect", BatteryArg { battery_no }).await
+}
+
+pub async fn battery_poll() -> Result<BatteryPoll, String> {
+    invoke("battery_poll", Empty {}).await
+}
+
+#[allow(dead_code)]
+pub async fn battery_send_login(battery_no: String) -> Result<(), String> {
+    invoke_void("battery_send_login", BatteryArg { battery_no: &battery_no }).await
+}
+
+pub async fn battery_send_location(battery_no: String) -> Result<(), String> {
+    invoke_void("battery_send_location", BatteryArg { battery_no: &battery_no }).await
+}
+
+pub async fn battery_send_alarm(battery_no: String) -> Result<(), String> {
+    invoke_void("battery_send_alarm", BatteryArg { battery_no: &battery_no }).await
+}
+
+pub async fn battery_send_runtime(battery_no: String) -> Result<(), String> {
+    invoke_void("battery_send_runtime", BatteryArg { battery_no: &battery_no }).await
+}
+
+pub async fn battery_send_ping(battery_no: String) -> Result<(), String> {
+    invoke_void("battery_send_ping", BatteryArg { battery_no: &battery_no }).await
+}
+
+#[allow(dead_code)]
+pub async fn battery_send_logout(battery_no: String) -> Result<(), String> {
+    invoke_void("battery_send_logout", BatteryArg { battery_no: &battery_no }).await
 }
