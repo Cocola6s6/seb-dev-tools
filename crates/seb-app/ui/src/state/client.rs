@@ -81,6 +81,19 @@ pub struct FrameLog {
     pub dir: String,
     pub summary: String,
     pub hex: String,
+    #[serde(default)]
+    pub fields: Vec<Field>,
+}
+
+/// 镜像 seb-core semantic::Field：中台字段名 + 中文名 + 值 + 在整帧里的字节区间
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Field {
+    pub key: String,
+    pub label: String,
+    pub value: String,
+    pub start: usize,
+    pub end: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

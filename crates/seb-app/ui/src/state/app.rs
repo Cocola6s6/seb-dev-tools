@@ -1,5 +1,5 @@
-use super::battery::BatteryCtx;
-use super::client::ClientCtx;
+use super::battery::{BatteryCtx, BatteryFrame};
+use super::client::{ClientCtx, Field, FrameLog};
 use super::dto::{ConnState, ControlType, DeployResult, EcuParam, SendResult};
 use super::settings::{AppConfig, GlobalSettings};
 use super::ui::{LogEntry, LogLevel, Page, ToolboxMode};
@@ -46,6 +46,9 @@ pub struct AppCtx {
     pub city_id: Signal<String>,
     pub conn: Signal<ConnState>,
     pub logs: Signal<Vec<LogEntry>>,
+    /// 日志过滤词，空格分词按与匹配；底部和分屏左栏共用
+    pub log_query: Signal<String>,
+    pub log_search_open: Signal<bool>,
     pub ecu_params: Signal<Vec<EcuParam>>,
     pub control_types: Signal<Vec<ControlType>>,
     pub deploy_options: Signal<DeployOptions>,
@@ -73,6 +76,8 @@ impl AppCtx {
             city_id: create_signal("0".to_string()),
             conn: create_signal(ConnState::default()),
             logs: create_signal(Vec::new()),
+            log_query: create_signal(String::new()),
+            log_search_open: create_signal(false),
             ecu_params: create_signal(Vec::new()),
             control_types: create_signal(Vec::new()),
             deploy_options: create_signal(DeployOptions::default()),
@@ -144,38 +149,42 @@ impl AppCtx {
     }
 
     pub fn log(&self, text: impl Into<String>, level: LogLevel) {
-        self.log_tinted(text, level, self.page.get().tint(), None, String::new());
+        self.log_tinted(text, level, self.page.get().tint(), None, String::new(), None);
     }
 
     /// 客户端的收发固定用客户端配色：指令常常是在「中控指令」页发出的，但回包属于客户端
     pub fn log_client(&self, text: impl Into<String>, level: LogLevel) {
         let device = self.client.selected.get_clone();
-        self.log_tinted(text, level, Page::Client.tint(), None, device);
+        self.log_tinted(text, level, Page::Client.tint(), None, device, None);
     }
 
     /// 电池客户端的收发固定用电池客户端配色
     pub fn log_battery(&self, text: impl Into<String>, level: LogLevel) {
         let device = self.battery.selected.get_clone();
-        self.log_tinted(text, level, Page::Battery.tint(), None, device);
+        self.log_tinted(text, level, Page::Battery.tint(), None, device, None);
     }
 
-    pub fn log_battery_frame(&self, dir: &str, battery_no: &str, text: impl Into<String>) {
-        let dir = match dir {
-            "up" => Some("up"),
-            "down" => Some("down"),
-            _ => None,
-        };
-        self.log_tinted(text, LogLevel::Info, Page::Battery.tint(), dir, battery_no.to_string());
+    pub fn log_battery_frame(&self, dir: &str, battery_no: &str, f: &BatteryFrame) {
+        self.log_tinted(
+            f.summary.clone(),
+            LogLevel::Info,
+            Page::Battery.tint(),
+            frame_dir(dir),
+            battery_no.to_string(),
+            Some((f.hex.clone(), f.fields.clone())),
+        );
     }
 
     /// 报文日志：上行还是下行、是哪台设备，都要一眼能分出来
-    pub fn log_frame(&self, dir: &str, device: &str, text: impl Into<String>) {
-        let dir = match dir {
-            "up" => Some("up"),
-            "down" => Some("down"),
-            _ => None,
-        };
-        self.log_tinted(text, LogLevel::Info, Page::Client.tint(), dir, device.to_string());
+    pub fn log_frame(&self, dir: &str, device: &str, f: &FrameLog) {
+        self.log_tinted(
+            f.summary.clone(),
+            LogLevel::Info,
+            Page::Client.tint(),
+            frame_dir(dir),
+            device.to_string(),
+            Some((f.hex.clone(), f.fields.clone())),
+        );
     }
 
     fn log_tinted(
@@ -185,10 +194,14 @@ impl AppCtx {
         tint: &'static str,
         dir: Option<&'static str>,
         device: String,
+        frame: Option<(String, Vec<Field>)>,
     ) {
+        let (hex, fields) = frame.unwrap_or_default();
         let entry = LogEntry {
             ts: now_hms(),
             text: text.into(),
+            hex,
+            fields,
             level,
             tint,
             dir,
@@ -275,5 +288,13 @@ impl AppCtx {
                 Err(e) => ctx.log_error(format!("【错误】查询实例号失败: {e}")),
             }
         });
+    }
+}
+
+fn frame_dir(dir: &str) -> Option<&'static str> {
+    match dir {
+        "up" => Some("up"),
+        "down" => Some("down"),
+        _ => None,
     }
 }

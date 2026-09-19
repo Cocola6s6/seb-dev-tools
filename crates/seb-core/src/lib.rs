@@ -9,6 +9,7 @@ pub mod hosts;
 pub mod mq;
 pub mod payload;
 pub mod redis;
+pub mod semantic;
 
 pub use config::AppConfig;
 pub use flink::{FlinkJobStatus, FlinkState};

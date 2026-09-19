@@ -873,7 +873,13 @@
       .client-split-right .device-sub {
         display: none;
       }
+      .client-split-left.log-col .log-pane {
+        height: calc(100vh - 116px);
+        margin: 0;
+      }
     }
+
+    .client-split-left.log-col { overflow: hidden; }
 
     @keyframes splitPanelSlideIn {
       0% {
@@ -1493,6 +1499,28 @@
       opacity: 1;
       transition-delay: 0.5s;
     }
+    /* 平时不占位，Cmd/Ctrl+F 才滑出来 */
+    .log-search { display: flex; align-items: center; }
+    .log-search input {
+      width: 0;
+      padding: 0;
+      border: none;
+      background: transparent;
+      font-size: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: width .24s cubic-bezier(0.16, 1, 0.3, 1), opacity .2s ease;
+    }
+    .log-search.open input {
+      width: 190px;
+      margin-left: 10px;
+      opacity: 1;
+      pointer-events: auto;
+      border-bottom: 1px solid var(--line);
+    }
+    .log-search input:focus { outline: none; border-bottom-color: var(--accent); }
+    .log-count { color: var(--muted); font-size: 11px; }
+    .term-hit { background: #fff3cd; border-radius: 3px; }
     .log-pane.minimized .log-head {
       border-bottom: none;
       border-radius: calc(var(--radius) - 1px);
@@ -1506,7 +1534,8 @@
       line-height: 1.6;
       user-select: text;
     }
-    .log-line { display: flex; gap: 10px; white-space: pre-wrap; word-break: break-all; }
+    .log-line { white-space: pre-wrap; word-break: break-all; }
+    .log-row  { display: flex; gap: 10px; }
     .log-ts    { color: #b9c1cd; flex: none; }
     .dir {
       flex: none;
@@ -1526,6 +1555,31 @@
     .log-info  { color: var(--text-2); }
     .log-warn  { color: var(--warn); }
     .log-error { color: var(--error); }
+
+    .log-msg { flex: 1; min-width: 0; }
+    .log-caret, .log-caret-gap { flex: none; width: 10px; height: 10px; align-self: center; }
+    .log-caret { color: #b9c1cd; cursor: pointer; transition: transform .15s ease, color .15s ease; }
+    .log-line.expandable.open .log-caret { transform: rotate(90deg); color: var(--accent); }
+    .log-line.expandable .log-msg { cursor: pointer; text-decoration: underline dotted #b9c1cd; text-underline-offset: 3px; }
+    .log-line.expandable.open .log-msg { color: var(--accent); text-decoration-color: var(--accent); }
+    .log-hex { color: var(--muted); margin-bottom: 3px; }
+    .hex-hit { background: var(--glow); color: var(--accent); border-radius: 3px; }
+    .log-detail {
+      margin: 3px 0 7px 20px;
+      border-left: 2px solid var(--line);
+      padding-left: 10px;
+    }
+    .log-field {
+      display: grid;
+      grid-template-columns: max-content max-content minmax(0, 1fr);
+      gap: 10px;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+    .log-field:hover { background: var(--surface); }
+    .log-field .f-label { color: var(--text-2); }
+    .log-field .f-key   { color: var(--accent-2); opacity: .7; }
+    .log-field .f-value { color: var(--text); word-break: break-all; }
 
     /* 全局提示弹窗 (Global Toast) */
     .global-toast-container {

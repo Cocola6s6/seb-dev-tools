@@ -1,6 +1,7 @@
 //! CosPower 电池协议的常量、打包与解析。
 
 use crate::config::BatteryPayloadSettings;
+use crate::semantic::{Frame, FrameBuilder, BATTERY_HEADER_LEN};
 use chrono::{Datelike, Local, Timelike};
 
 pub mod message_type {
@@ -63,12 +64,44 @@ fn pad_pack_id(pack_id: &str) -> [u8; 16] {
     out
 }
 
-fn pad_iccid(iccid: &str) -> [u8; 20] {
-    let mut out = [b'0'; 20];
-    let bytes = iccid.as_bytes();
-    let len = bytes.len().min(20);
+fn ascii_pad<const N: usize>(s: &str) -> [u8; N] {
+    let mut out = [b'0'; N];
+    let bytes = s.as_bytes();
+    let len = bytes.len().min(N);
     out[..len].copy_from_slice(&bytes[..len]);
     out
+}
+
+fn builder() -> FrameBuilder {
+    FrameBuilder::new(BATTERY_HEADER_LEN)
+}
+
+fn put_time(b: &mut FrameBuilder) {
+    let t = current_time_bytes();
+    let text = format!(
+        "20{:02}-{:02}-{:02} {:02}:{:02}:{:02}",
+        t[0], t[1], t[2], t[3], t[4], t[5]
+    );
+    b.put("time", "设备时间", text, &t);
+}
+
+fn yes_no(v: bool) -> &'static str {
+    if v {
+        "是"
+    } else {
+        "否"
+    }
+}
+
+/// 告警字节里每个 bit 都是中台的一个字段，字节只写一次，置位的挂成字段
+fn put_alarm_bits(b: &mut FrameBuilder, byte: u8, bits: &[(u8, &str, &str)]) {
+    let start = b.offset();
+    b.raw(&[byte]);
+    for (bit, key, label) in bits {
+        if byte & (1 << bit) != 0 {
+            b.field(*key, *label, "是", start, start + 1);
+        }
+    }
 }
 
 fn build_frame(
@@ -126,18 +159,23 @@ pub fn build_login_frame(
     sw_maj: u8,
     sw_min: u8,
     sw_rev: u8,
-) -> Vec<u8> {
-    let mut body = Vec::with_capacity(32);
-    body.extend_from_slice(&current_time_bytes());
-    body.extend_from_slice(&pad_iccid(iccid));
-    body.push(hw_maj);
-    body.push(hw_min);
-    body.push(hw_rev);
-    body.push(sw_maj);
-    body.push(sw_min);
-    body.push(sw_rev);
-
-    build_frame(message_type::LOGIN, reply_tag::NON_REPLY, pack_id, 0x01, &body)
+) -> Frame {
+    let mut b = builder();
+    put_time(&mut b);
+    b.put("iccId", "ICCID", iccid, &ascii_pad::<20>(iccid));
+    b.put(
+        "hardwareVersion",
+        "硬件版本",
+        format!("{hw_maj}.{hw_min}.{hw_rev}"),
+        &[hw_maj, hw_min, hw_rev],
+    );
+    b.put(
+        "softwareVersion",
+        "软件版本",
+        format!("{sw_maj}.{sw_min}.{sw_rev}"),
+        &[sw_maj, sw_min, sw_rev],
+    );
+    b.finish(|body| build_frame(message_type::LOGIN, reply_tag::NON_REPLY, pack_id, 0x01, body))
 }
 
 pub fn build_location_frame(
@@ -146,104 +184,132 @@ pub fn build_location_frame(
     lng_str: &str,
     speed_str: &str,
     azimuth_str: &str,
-) -> Vec<u8> {
-    let mut body = Vec::with_capacity(40);
-    body.extend_from_slice(&current_time_bytes());
-    body.push(monitor_subtype::LOCATION);
-    body.push(b'A'); // 'A' 有效
-
-    let mut lat_buf = [b'0'; 10];
-    let b = lat_str.as_bytes();
-    lat_buf[..b.len().min(10)].copy_from_slice(&b[..b.len().min(10)]);
-    body.extend_from_slice(&lat_buf);
-
-    let mut lng_buf = [b'0'; 10];
-    let b = lng_str.as_bytes();
-    lng_buf[..b.len().min(10)].copy_from_slice(&b[..b.len().min(10)]);
-    body.extend_from_slice(&lng_buf);
-
-    let mut spd_buf = [b'0'; 5];
-    let b = speed_str.as_bytes();
-    spd_buf[..b.len().min(5)].copy_from_slice(&b[..b.len().min(5)]);
-    body.extend_from_slice(&spd_buf);
-
-    let mut az_buf = [b'0'; 5];
-    let b = azimuth_str.as_bytes();
-    az_buf[..b.len().min(5)].copy_from_slice(&b[..b.len().min(5)]);
-    body.extend_from_slice(&az_buf);
-
-    body.push(0); // gpsCount
-    body.push(0); // bdCount
-
-    build_frame(message_type::MONITOR, reply_tag::SUCCESS, pack_id, 0x01, &body)
+) -> Frame {
+    let mut b = builder();
+    put_time(&mut b);
+    b.raw(&[monitor_subtype::LOCATION]);
+    b.put("isValid", "定位有效性", "A 有效", b"A");
+    b.put("latitudeStr", "纬度", lat_str, &ascii_pad::<10>(lat_str));
+    b.put("longitudeStr", "经度", lng_str, &ascii_pad::<10>(lng_str));
+    b.put("speedStr", "速度", speed_str, &ascii_pad::<5>(speed_str));
+    b.put("azimuthStr", "方位角", azimuth_str, &ascii_pad::<5>(azimuth_str));
+    b.put("gpsCount", "GPS 星数", "0", &[0]);
+    b.put("bdCount", "北斗星数", "0", &[0]);
+    b.finish(|body| build_frame(message_type::MONITOR, reply_tag::SUCCESS, pack_id, 0x01, body))
 }
 
-pub fn build_alarm_frame(pack_id: &str, p: &BatteryPayloadSettings) -> Vec<u8> {
-    let mut body = Vec::with_capacity(13);
-    body.extend_from_slice(&current_time_bytes());
-    body.push(monitor_subtype::ALARM);
+pub fn build_alarm_frame(pack_id: &str, p: &BatteryPayloadSettings) -> Frame {
+    let mut b = builder();
+    put_time(&mut b);
+    b.raw(&[monitor_subtype::ALARM]);
 
-    body.push(p.alarm_byte_one); // 过压/欠压/过流等
-    body.push(p.alarm_byte_two); // 短路/超时/低温/MOS过温
-    body.push(p.alarm_byte_three); // heatStatus / portOverTemperature
-    body.push(p.alarm_byte_four); // chargeMos / disChargeMos / heatFilmMos
+    put_alarm_bits(
+        &mut b,
+        p.alarm_byte_one,
+        &[
+            (0, "overVoltage", "过压"),
+            (1, "underVoltage", "欠压"),
+            (2, "chargeOverTemperature", "充电高温"),
+            (3, "disChargeOverTemperature", "放电高温"),
+            (4, "heatFilmOverTemperature", "加热膜高温"),
+            (5, "disChargeOverCurrentOne", "放电过流一级"),
+            (6, "disChargeOverCurrentTwo", "放电过流二级"),
+            (7, "disChargeOverCurrentThree", "放电过流三级"),
+        ],
+    );
+    put_alarm_bits(
+        &mut b,
+        p.alarm_byte_two,
+        &[
+            (0, "shortCircuit", "短路"),
+            (1, "chargeOverCurrent", "充电过流"),
+            (2, "heatTimeout", "加热超时"),
+            (3, "chargeUnderTemperature", "充电低温"),
+            (4, "disChargeUnderTemperature", "放电低温"),
+            (5, "mosOverTemperature", "MOS 高温"),
+        ],
+    );
 
-    body.extend_from_slice(&p.alarm_fault_code.to_be_bytes());
+    let three = p.alarm_byte_three;
+    let start = b.offset();
+    b.raw(&[three]);
+    b.field("heatStatus", "加热状态", (three & 0x03).to_string(), start, start + 1);
+    b.field(
+        "portOverTemperature",
+        "端口高温",
+        yes_no(three & 0x08 != 0),
+        start,
+        start + 1,
+    );
 
-    build_frame(message_type::MONITOR, reply_tag::NON_REPLY, pack_id, 0x01, &body)
+    let four = p.alarm_byte_four;
+    let start = b.offset();
+    b.raw(&[four]);
+    b.field("chargeMosStatus", "充电 MOS", yes_no(four & 0x01 != 0), start, start + 1);
+    b.field("disChargeMosStatus", "放电 MOS", yes_no(four & 0x02 != 0), start, start + 1);
+    b.field("heatFilmMosStatus", "加热膜 MOS", yes_no(four & 0x04 != 0), start, start + 1);
+
+    b.put(
+        "faultCode",
+        "故障码",
+        format!("{:04X}", p.alarm_fault_code),
+        &p.alarm_fault_code.to_be_bytes(),
+    );
+
+    b.finish(|body| build_frame(message_type::MONITOR, reply_tag::NON_REPLY, pack_id, 0x01, body))
 }
 
-pub fn build_runtime_frame(pack_id: &str, p: &BatteryPayloadSettings) -> Vec<u8> {
-    let mut body = Vec::new();
-    body.extend_from_slice(&current_time_bytes());
-    body.push(monitor_subtype::RUNTIME);
+pub fn build_runtime_frame(pack_id: &str, p: &BatteryPayloadSettings) -> Frame {
+    let mut b = builder();
+    put_time(&mut b);
+    b.raw(&[monitor_subtype::RUNTIME]);
 
-    body.extend_from_slice(&p.total_voltage.to_be_bytes());
-    body.extend_from_slice(&p.current.to_be_bytes());
-    body.push(p.battery_status);
+    b.put("totalVoltage", "总电压", p.total_voltage.to_string(), &p.total_voltage.to_be_bytes());
+    b.put("current", "电流", p.current.to_string(), &p.current.to_be_bytes());
+    b.put("status", "电池状态", p.battery_status.to_string(), &[p.battery_status]);
 
     let cells = parse_u16_list(&p.cell_voltages);
-    body.push(cells.len() as u8);
-    for v in &cells {
-        body.extend_from_slice(&v.to_be_bytes());
+    b.put("voltageCount", "电芯数量", cells.len().to_string(), &[cells.len() as u8]);
+    if !cells.is_empty() {
+        let cell_bytes: Vec<u8> = cells.iter().flat_map(|v| v.to_be_bytes()).collect();
+        b.put("voltages", "电芯电压", join_nums(&cells), &cell_bytes);
     }
 
-    for list in [
-        &p.battery_temperatures,
-        &p.heat_film_temperatures,
-        &p.environment_temperatures,
-        &p.mos_temperatures,
+    for (list, count_key, key, label) in [
+        (&p.battery_temperatures, "temperatureCount", "temperatures", "电池温度"),
+        (&p.heat_film_temperatures, "heatFilmTemperatureCount", "heatFilmTemperatures", "加热膜温度"),
+        (&p.environment_temperatures, "environmentTemperatureCount", "environmentTemperatures", "环境温度"),
+        (&p.mos_temperatures, "mosTemperatureCount", "mosTemperatures", "MOS 温度"),
     ] {
         let temps = parse_u8_list(list);
-        body.push(temps.len() as u8);
-        body.extend_from_slice(&temps);
+        b.put(count_key, format!("{label}数量"), temps.len().to_string(), &[temps.len() as u8]);
+        if !temps.is_empty() {
+            b.put(key, label, join_nums(&temps), &temps);
+        }
     }
 
-    body.extend_from_slice(&p.max_cell_voltage.to_be_bytes());
-    body.extend_from_slice(&p.min_cell_voltage.to_be_bytes());
-    body.extend_from_slice(&p.avg_cell_voltage.to_be_bytes());
+    b.put("highestVoltage", "最高单体电压", p.max_cell_voltage.to_string(), &p.max_cell_voltage.to_be_bytes());
+    b.put("lowestVoltage", "最低单体电压", p.min_cell_voltage.to_string(), &p.min_cell_voltage.to_be_bytes());
+    b.put("averageVoltage", "平均单体电压", p.avg_cell_voltage.to_string(), &p.avg_cell_voltage.to_be_bytes());
+    b.put("highestTemperature", "最高电池温度", p.max_battery_temperature.to_string(), &[p.max_battery_temperature]);
+    b.put("lowestTemperature", "最低电池温度", p.min_battery_temperature.to_string(), &[p.min_battery_temperature]);
+    b.put("totalCapacity", "累计放电容量", p.total_discharge_capacity.to_string(), &p.total_discharge_capacity.to_be_bytes());
+    b.put("ratedCapacity", "额定容量", p.rated_capacity.to_string(), &p.rated_capacity.to_be_bytes());
+    b.put("remainCapacity", "剩余容量", p.remain_capacity.to_string(), &p.remain_capacity.to_be_bytes());
+    b.put("soc", "SOC", format!("{}%", p.soc), &[p.soc]);
+    b.put("statusInfo", "状态字节", format!("0x{:02X}", p.status_info), &[p.status_info]);
+    b.put("circulateCount", "循环次数", p.cycle_count.to_string(), &p.cycle_count.to_be_bytes());
+    b.put("highestVoltageNo", "最高单体编号", p.max_cell_no.to_string(), &[p.max_cell_no]);
+    b.put("lowestVoltageNo", "最低单体编号", p.min_cell_no.to_string(), &[p.min_cell_no]);
+    b.put("temperatureNo", "温度编号", p.temperature_no.to_string(), &[p.temperature_no]);
+    b.put("wakeInfo", "唤醒信息", "0", &[0]);
+    b.raw(&[0x00, 0x00]);
 
-    body.push(p.max_battery_temperature);
-    body.push(p.min_battery_temperature);
+    b.finish(|body| build_frame(message_type::MONITOR, reply_tag::SUCCESS, pack_id, 0x01, body))
+}
 
-    body.extend_from_slice(&p.total_discharge_capacity.to_be_bytes());
-    body.extend_from_slice(&p.rated_capacity.to_be_bytes());
-    body.extend_from_slice(&p.remain_capacity.to_be_bytes());
-
-    body.push(p.soc);
-    body.push(p.status_info);
-
-    body.extend_from_slice(&p.cycle_count.to_be_bytes());
-    body.push(p.max_cell_no);
-    body.push(p.min_cell_no);
-    body.push(p.temperature_no);
-
-    // 3 bytes reverse_ext ("000000")
-    body.push(0x00);
-    body.push(0x00);
-    body.push(0x00);
-
-    build_frame(message_type::MONITOR, reply_tag::SUCCESS, pack_id, 0x01, &body)
+fn join_nums<T: std::fmt::Display>(v: &[T]) -> String {
+    v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
 }
 
 fn parse_u16_list(s: &str) -> Vec<u16> {
@@ -254,22 +320,24 @@ fn parse_u8_list(s: &str) -> Vec<u8> {
     s.split(',').filter_map(|v| v.trim().parse().ok()).collect()
 }
 
-pub fn build_ping_frame(pack_id: &str) -> Vec<u8> {
-    let body = current_time_bytes();
-    build_frame(message_type::PING, reply_tag::NON_REPLY, pack_id, 0x01, &body)
+pub fn build_ping_frame(pack_id: &str) -> Frame {
+    let mut b = builder();
+    put_time(&mut b);
+    b.finish(|body| build_frame(message_type::PING, reply_tag::NON_REPLY, pack_id, 0x01, body))
 }
 
-pub fn build_logout_frame(pack_id: &str) -> Vec<u8> {
-    let body = current_time_bytes();
-    build_frame(message_type::LOGOUT, reply_tag::NON_REPLY, pack_id, 0x01, &body)
+pub fn build_logout_frame(pack_id: &str) -> Frame {
+    let mut b = builder();
+    put_time(&mut b);
+    b.finish(|body| build_frame(message_type::LOGOUT, reply_tag::NON_REPLY, pack_id, 0x01, body))
 }
 
-pub fn build_control_reply(pack_id: &str) -> Vec<u8> {
-    let mut body = Vec::with_capacity(8);
-    body.extend_from_slice(&current_time_bytes());
-    body.push(0x01); // lockunlock type
-    body.push(0x01); // opCode success
-    build_frame(message_type::CONTROL, reply_tag::SUCCESS, pack_id, 0x01, &body)
+pub fn build_control_reply(pack_id: &str) -> Frame {
+    let mut b = builder();
+    put_time(&mut b);
+    b.put("command", "控制命令", "1 开关锁", &[0x01]);
+    b.put("opCode", "执行结果", "1 成功", &[0x01]);
+    b.finish(|body| build_frame(message_type::CONTROL, reply_tag::SUCCESS, pack_id, 0x01, body))
 }
 
 // ==================== 报文切分与解析 ====================
@@ -338,17 +406,29 @@ pub fn to_hex(data: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    /// 字段要顺序落在帧体内；同一个字节挂多个 bit 语义时区间会重复，只要不倒退
+    fn check_spans(f: &Frame) {
+        let mut cursor = BATTERY_HEADER_LEN;
+        for field in &f.fields {
+            assert!(field.start >= cursor && field.end > field.start, "{} 区间乱序", field.key);
+            assert!(field.end <= f.bytes.len() - 3, "{} 越过了校验位", field.key);
+            cursor = field.start;
+        }
+    }
+
     #[test]
     fn test_build_login_frame() {
-        let frame = build_login_frame("CMAH030799497009", "89860409081870640660", 2, 1, 3, 3, 2, 1);
+        let f = build_login_frame("CMAH030799497009", "89860409081870640660", 2, 1, 3, 3, 2, 1);
+        let frame = &f.bytes;
         assert_eq!(frame[0], 0xFA);
         assert_eq!(frame[1], 0xFB);
         assert_eq!(frame[2], message_type::LOGIN);
         assert_eq!(frame[frame.len() - 2], 0xFB);
         assert_eq!(frame[frame.len() - 1], 0xFA);
         assert_eq!(frame.len(), 26 + 32);
+        check_spans(&f);
 
-        let (frames, used) = split_battery_frames(&frame);
+        let (frames, used) = split_battery_frames(frame);
         assert_eq!(frames.len(), 1);
         assert_eq!(used, frame.len());
     }
@@ -356,25 +436,29 @@ mod tests {
     #[test]
     fn test_build_location_frame() {
         let (lat_str, lng_str) = format_lat_lng("116.302928,40.054926");
-        let frame = build_location_frame("CMAH030799497009", &lat_str, &lng_str, "00137", "23971");
+        let f = build_location_frame("CMAH030799497009", &lat_str, &lng_str, "00137", "23971");
+        let frame = &f.bytes;
         assert_eq!(frame[0], 0xFA);
         assert_eq!(frame[1], 0xFB);
         assert_eq!(frame[2], message_type::MONITOR);
         assert_eq!(frame[frame.len() - 2], 0xFB);
         assert_eq!(frame[frame.len() - 1], 0xFA);
         assert_eq!(frame.len(), 26 + 40);
+        check_spans(&f);
     }
 
     #[test]
     fn test_build_alarm_and_runtime_frames() {
         let p = BatteryPayloadSettings::default();
         let alarm = build_alarm_frame("CMAH030799497009", &p);
-        assert_eq!(alarm.len(), 26 + 13);
-        assert_eq!(alarm[2], message_type::MONITOR);
+        assert_eq!(alarm.bytes.len(), 26 + 13);
+        assert_eq!(alarm.bytes[2], message_type::MONITOR);
+        check_spans(&alarm);
 
         let runtime = build_runtime_frame("CMAH030799497009", &p);
-        assert_eq!(runtime[0], 0xFA);
-        assert_eq!(runtime[1], 0xFB);
-        assert_eq!(runtime[2], message_type::MONITOR);
+        assert_eq!(runtime.bytes[0], 0xFA);
+        assert_eq!(runtime.bytes[1], 0xFB);
+        assert_eq!(runtime.bytes[2], message_type::MONITOR);
+        check_spans(&runtime);
     }
 }

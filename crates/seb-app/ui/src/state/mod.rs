@@ -9,7 +9,7 @@ mod util;
 pub use app::{AppCtx, DeployOptionItem, DeployOptions};
 pub use battery::{BatteryConfig, BatteryCtx, BatteryDefaults, BatteryPoll, BatteryState};
 pub use client::{
-    AlarmType, ClientCtx, ClientDefaults, ClientPoll, DeviceConfig, DeviceState, FrameLog,
+    AlarmType, ClientCtx, ClientDefaults, ClientPoll, DeviceConfig, DeviceState,
 };
 pub use dto::{
     BikeDetail, BorrowOptions, ConnState, ControlType, DeployResult, EcuParam, SendResult,

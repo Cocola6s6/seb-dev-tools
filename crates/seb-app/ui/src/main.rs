@@ -13,7 +13,7 @@ use pages::{
     battery::BatteryPage, client::ClientPage, control::ControlPage, deploy::DeployPage,
     ecu::EcuPage, settings::SettingsPage,
 };
-use state::{AppCtx, FrameLog, Page};
+use state::{AppCtx, Page};
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -119,7 +119,7 @@ fn App() -> View {
                     ctx.client.devices.set(poll.devices);
                 }
                 for f in poll.frames {
-                    ctx.log_frame(&f.dir, &f.device_no, frame_line(&f));
+                    ctx.log_frame(&f.dir, &f.device_no, &f);
                 }
             }
             if let Ok(bpoll) = api::battery_poll().await {
@@ -127,7 +127,7 @@ fn App() -> View {
                     ctx.battery.devices.set(bpoll.devices);
                 }
                 for f in bpoll.frames {
-                    ctx.log_battery_frame(&f.dir, &f.battery_no, format!("{} | {}", f.summary, f.hex));
+                    ctx.log_battery_frame(&f.dir, &f.battery_no, &f);
                 }
             }
         }
@@ -210,14 +210,6 @@ fn show_settings(ctx: AppCtx) -> impl Fn() -> &'static str {
         } else {
             "page hidden"
         }
-    }
-}
-
-fn frame_line(f: &FrameLog) -> String {
-    if f.hex.is_empty() {
-        f.summary.clone()
-    } else {
-        format!("{} | {}", f.summary, f.hex)
     }
 }
 

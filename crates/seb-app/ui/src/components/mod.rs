@@ -9,7 +9,7 @@ mod widgets;
 
 pub use device::{device_list, qr_panel, DeviceRow, DeviceSource};
 pub use device_bar::DeviceBar;
-pub use log::{GlobalToast, LogPane};
+pub use log::{GlobalToast, LogPane, LogSplit};
 pub use map::MapPickerModal;
 pub use pills::{InfraPill, InstancePill, OnlinePills};
 pub use toolbox::{KnockEgg, ToolboxNavButton};

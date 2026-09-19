@@ -50,6 +50,8 @@ pub struct BatteryFrame {
     pub dir: String,
     pub summary: String,
     pub hex: String,
+    #[serde(default)]
+    pub fields: Vec<crate::state::client::Field>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

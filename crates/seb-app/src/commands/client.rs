@@ -41,6 +41,7 @@ pub struct ClientFrame {
     pub dir: String,
     pub summary: String,
     pub hex: String,
+    pub fields: Vec<seb_core::semantic::Field>,
 }
 
 #[derive(Serialize)]
@@ -150,6 +151,7 @@ pub fn client_poll(state: State<'_, AppState>) -> ClientPoll {
                 dir: f.dir,
                 summary: f.summary,
                 hex: f.hex,
+                fields: f.fields,
             });
         }
     }

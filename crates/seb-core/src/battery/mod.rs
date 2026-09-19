@@ -6,6 +6,7 @@ mod frame;
 pub use frame::*;
 
 use crate::config::BatteryPayloadSettings;
+use crate::semantic::Frame;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -31,6 +32,8 @@ pub struct BatteryFrameLog {
     pub dir: String,
     pub summary: String,
     pub hex: String,
+    #[serde(default)]
+    pub fields: Vec<crate::semantic::Field>,
 }
 
 impl BatteryFrameLog {
@@ -39,6 +42,16 @@ impl BatteryFrameLog {
             dir: "sys".into(),
             summary: summary.into(),
             hex: String::new(),
+            fields: Vec::new(),
+        }
+    }
+
+    fn up(summary: impl Into<String>, f: &Frame) -> Self {
+        Self {
+            dir: "up".into(),
+            summary: summary.into(),
+            hex: to_hex(&f.bytes),
+            fields: f.fields.clone(),
         }
     }
 }
@@ -216,18 +229,15 @@ impl BatteryLink {
                                     dir: "down".into(),
                                     summary,
                                     hex: to_hex(&f),
+                                    fields: Vec::new(),
                                 });
 
                                 if f.len() >= 26 && f[2] == message_type::CONTROL {
                                     let ack = build_control_reply(&link_battery_no);
                                     let mut guard = writer.lock().await;
                                     if let Some(w) = guard.as_mut() {
-                                        if w.write_all(&ack).await.is_ok() {
-                                            shared.push(BatteryFrameLog {
-                                                dir: "up".into(),
-                                                summary: "控制应答 (自动回复)".into(),
-                                                hex: to_hex(&ack),
-                                            });
+                                        if w.write_all(&ack.bytes).await.is_ok() {
+                                            shared.push(BatteryFrameLog::up("控制应答 (自动回复)", &ack));
                                         }
                                     }
                                 }
@@ -259,12 +269,8 @@ impl BatteryLink {
                     let data = build_ping_frame(&link_battery_no);
                     let mut guard = writer.lock().await;
                     let Some(w) = guard.as_mut() else { return };
-                    if w.write_all(&data).await.is_ok() {
-                        shared.push(BatteryFrameLog {
-                            dir: "up".into(),
-                            summary: "心跳 (Ping)".into(),
-                            hex: to_hex(&data),
-                        });
+                    if w.write_all(&data.bytes).await.is_ok() {
+                        shared.push(BatteryFrameLog::up("心跳 (Ping)", &data));
                     } else {
                         return;
                     }
@@ -331,20 +337,16 @@ impl BatteryLink {
         self.send(&data, "电池登出包 (Logout)").await
     }
 
-    pub async fn send(&self, data: &[u8], summary: impl Into<String>) -> Result<(), String> {
+    pub async fn send(&self, f: &Frame, summary: impl Into<String>) -> Result<(), String> {
         let mut guard = self.writer.lock().await;
         let Some(writer) = guard.as_mut() else {
             return Err("尚未连接电池网关".to_string());
         };
         writer
-            .write_all(data)
+            .write_all(&f.bytes)
             .await
             .map_err(|e| format!("发送失败: {e}"))?;
-        self.shared.push(BatteryFrameLog {
-            dir: "up".into(),
-            summary: summary.into(),
-            hex: to_hex(data),
-        });
+        self.shared.push(BatteryFrameLog::up(summary, f));
         Ok(())
     }
 

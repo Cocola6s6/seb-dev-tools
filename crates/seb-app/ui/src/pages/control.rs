@@ -1,6 +1,6 @@
 use crate::actions::run_send;
 use crate::api;
-use crate::components::{select_value, Check, DeviceBar};
+use crate::components::{select_value, Check, DeviceBar, LogSplit};
 use crate::state::{AppCtx, BorrowOptions, ControlType};
 use sycamore::prelude::*;
 
@@ -64,7 +64,7 @@ pub fn ControlPage() -> View {
     };
 
     view! {
-        div {
+        LogSplit {
             div(class="page-head") {
                 div(class="page-title") { "中控指令" }
                 div(class="page-desc") {

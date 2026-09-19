@@ -2,6 +2,7 @@
 //! 想收发原始报文只能自己连上去。
 
 use crate::frame;
+use crate::semantic::{Field, Frame};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -23,6 +24,7 @@ pub struct FrameLog {
     pub dir: String,
     pub summary: String,
     pub hex: String,
+    pub fields: Vec<Field>,
 }
 
 impl FrameLog {
@@ -31,6 +33,16 @@ impl FrameLog {
             dir: "sys".into(),
             summary: summary.into(),
             hex: String::new(),
+            fields: Vec::new(),
+        }
+    }
+
+    fn up(summary: impl Into<String>, f: &Frame) -> Self {
+        Self {
+            dir: "up".into(),
+            summary: summary.into(),
+            hex: frame::to_hex(&f.bytes),
+            fields: f.fields.clone(),
         }
     }
 }
@@ -365,6 +377,10 @@ impl DeviceLink {
                                     dir: "down".into(),
                                     summary,
                                     hex: frame::to_hex(&f),
+                                    fields: parsed
+                                        .as_ref()
+                                        .map(|p| p.fields.clone())
+                                        .unwrap_or_default(),
                                 });
                                 let Some(msg_id) = parsed.as_ref().and_then(|p| p.msg_id.clone())
                                 else {
@@ -416,17 +432,16 @@ impl DeviceLink {
                                 };
                                 let mut guard = writer.lock().await;
                                 let Some(w) = guard.as_mut() else { continue };
-                                if w.write_all(&data).await.is_err() {
+                                if w.write_all(&data.bytes).await.is_err() {
                                     continue;
                                 }
-                                shared.push(FrameLog {
-                                    dir: "up".into(),
-                                    summary: format!(
+                                shared.push(FrameLog::up(
+                                    format!(
                                         "{what} msgId={msg_id} 结果={}",
                                         if ok { "成功" } else { "失败" }
                                     ),
-                                    hex: frame::to_hex(&data),
-                                });
+                                    &data,
+                                ));
                                 let is_control = matches!(command, frame::cmd::CONTROL | frame::cmd::VOICE);
                                 if is_control && profile.reply_with_location {
                                     let loc = frame::location(
@@ -435,12 +450,8 @@ impl DeviceLink {
                                         unix_now(),
                                         &payload_settings(),
                                     );
-                                    if w.write_all(&loc).await.is_ok() {
-                                        shared.push(FrameLog {
-                                            dir: "up".into(),
-                                            summary: "应答后补发定位".into(),
-                                            hex: frame::to_hex(&loc),
-                                        });
+                                    if w.write_all(&loc.bytes).await.is_ok() {
+                                        shared.push(FrameLog::up("应答后补发定位", &loc));
                                     }
                                 }
                             }
@@ -473,12 +484,8 @@ impl DeviceLink {
                     let data = frame::ping(&device_no, soc, &payload_settings());
                     let mut guard = writer.lock().await;
                     let Some(w) = guard.as_mut() else { return };
-                    if w.write_all(&data).await.is_ok() {
-                        shared.push(FrameLog {
-                            dir: "up".into(),
-                            summary: "心跳".into(),
-                            hex: frame::to_hex(&data),
-                        });
+                    if w.write_all(&data.bytes).await.is_ok() {
+                        shared.push(FrameLog::up("心跳", &data));
                     } else {
                         return;
                     }
@@ -489,20 +496,16 @@ impl DeviceLink {
         Ok(())
     }
 
-    pub async fn send(&self, data: &[u8], summary: impl Into<String>) -> Result<(), String> {
+    pub async fn send(&self, f: &Frame, summary: impl Into<String>) -> Result<(), String> {
         let mut guard = self.writer.lock().await;
         let Some(writer) = guard.as_mut() else {
             return Err("尚未连接网关".to_string());
         };
         writer
-            .write_all(data)
+            .write_all(&f.bytes)
             .await
             .map_err(|e| format!("发送失败: {e}"))?;
-        self.shared.push(FrameLog {
-            dir: "up".into(),
-            summary: summary.into(),
-            hex: frame::to_hex(data),
-        });
+        self.shared.push(FrameLog::up(summary, f));
         Ok(())
     }
 

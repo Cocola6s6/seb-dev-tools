@@ -1,5 +1,5 @@
 use crate::api;
-use crate::components::select_value;
+use crate::components::{select_value, LogSplit};
 use crate::state::{AppCtx, DeployOptionItem};
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -302,7 +302,7 @@ pub fn DeployPage() -> View {
     };
 
     view! {
-        div {
+        LogSplit {
             div(class="page-head") {
                 div(class="page-title") { "一键接入" }
                 div(class="page-desc") {

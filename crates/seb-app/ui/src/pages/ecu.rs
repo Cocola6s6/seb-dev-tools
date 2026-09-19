@@ -1,6 +1,6 @@
 use crate::actions::run_send;
 use crate::api;
-use crate::components::{select_value, DeviceBar};
+use crate::components::{select_value, DeviceBar, LogSplit};
 use crate::state::{AppCtx, EcuParam};
 use sycamore::prelude::*;
 
@@ -88,7 +88,7 @@ pub fn EcuPage() -> View {
     };
 
     view! {
-        div {
+        LogSplit {
             div(class="page-head") {
                 div(class="page-title") { "中控配置" }
                 div(class="page-desc") {
