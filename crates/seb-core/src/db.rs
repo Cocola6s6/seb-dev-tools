@@ -139,7 +139,6 @@ pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<BikeDe
     let road_status = r.try_get::<String, _>("road_status").unwrap_or_default();
     let business_status = r.try_get::<String, _>("business_status").unwrap_or_default();
 
-    // 关联查询当前绑定的电池编号
     let bat_row = sqlx::query(
         "select battery_no from bike_battery_tb where bike_no = ? limit 1",
     )
@@ -153,7 +152,6 @@ pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<BikeDe
         .and_then(|br| br.try_get::<String, _>("battery_no").ok())
         .unwrap_or_default();
 
-    // 如果有电池编号，进一步查询电池资产详情 (battery_pid, battery_type_id)
     let (battery_pid, battery_type_id) = if !battery_no.is_empty() {
         if let Ok(Some(btr)) = sqlx::query(
             "select battery_pid, battery_type_id from battery_tb where battery_no = ? limit 1",
@@ -172,7 +170,6 @@ pub async fn find_bike(cfg: &MysqlConfig, bike_no: &str) -> Result<Option<BikeDe
         (String::new(), 0)
     };
 
-    // 查询 Redis 中控在线状态
     let redis_instance = crate::redis::instance_of(&ecu_no).await.unwrap_or(None);
     let online_status = match redis_instance {
         Some(inst) => format!("在线 (实例 {inst})"),

@@ -10,7 +10,7 @@ pub async fn send_borrow(
 ) -> Result<SendResult, String> {
     let dev = device_no(&state).await?;
     let payload = payload::borrow(&dev, options);
-    publish(&state, exchange::CONTROL, "借车", payload).await
+    publish(&state, exchange::Kind::Control, "借车", payload).await
 }
 
 #[tauri::command]
@@ -25,14 +25,14 @@ pub async fn send_control(
         _ => format!("控制[0x{control_command:02X}]"),
     };
     let payload = payload::control(&dev, control_command);
-    publish(&state, exchange::CONTROL, action, payload).await
+    publish(&state, exchange::Kind::Control, action, payload).await
 }
 
 #[tauri::command]
 pub async fn send_voice(state: State<'_, AppState>, voice_id: i64) -> Result<SendResult, String> {
     let dev = device_no(&state).await?;
     let payload = payload::voice(&dev, voice_id);
-    publish(&state, exchange::VOICE, format!("语音({voice_id})"), payload).await
+    publish(&state, exchange::Kind::Voice, format!("语音({voice_id})"), payload).await
 }
 
 #[tauri::command]
@@ -46,7 +46,7 @@ pub async fn send_ecu_query(
     let dev = device_no(&state).await?;
     let payload = payload::ecu_query(&dev, &keys);
     let action = format!("ECU查询({})", keys.join(", "));
-    publish(&state, exchange::QUERY, action, payload).await
+    publish(&state, exchange::Kind::Query, action, payload).await
 }
 
 #[tauri::command]
@@ -67,7 +67,7 @@ pub async fn send_ecu_set(
             .collect::<Vec<_>>()
             .join(", ")
     );
-    publish(&state, exchange::SET, action, payload).await
+    publish(&state, exchange::Kind::Set, action, payload).await
 }
 
 #[tauri::command]
@@ -78,7 +78,7 @@ pub async fn send_preset(state: State<'_, AppState>, preset: String) -> Result<S
             let payload = payload::ecu_set(&dev, ecu::PRESET_HELMET_ENABLE);
             publish(
                 &state,
-                exchange::SET,
+                exchange::Kind::Set,
                 "一键下发[头盔开启佩戴全功能15]",
                 payload,
             )
@@ -88,7 +88,7 @@ pub async fn send_preset(state: State<'_, AppState>, preset: String) -> Result<S
             let payload = payload::ecu_set(&dev, ecu::PRESET_HELMET_DISABLE);
             publish(
                 &state,
-                exchange::SET,
+                exchange::Kind::Set,
                 "一键下发[头盔恢复传统模式3]",
                 payload,
             )
@@ -96,7 +96,7 @@ pub async fn send_preset(state: State<'_, AppState>, preset: String) -> Result<S
         }
         "helmet_query" => {
             let payload = payload::ecu_query(&dev, ecu::PRESET_HELMET_QUERY);
-            publish(&state, exchange::QUERY, "一键查询[头盔全套配置]", payload).await
+            publish(&state, exchange::Kind::Query, "一键查询[头盔全套配置]", payload).await
         }
         other => Err(format!("未知的一键场景: {other}")),
     }

@@ -1,8 +1,8 @@
 mod commands;
 
 use commands::{
-    battery as battery_cmd, client, config as config_cmd, deploy, ecu as ecu_cmd, instance, send,
-    terminal, AppState,
+    battery as battery_cmd, client, config as config_cmd, deploy, ecu as ecu_cmd, hosts, instance,
+    send, terminal, AppState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,6 +29,9 @@ pub fn run() {
             send::send_preset,
             terminal::open_terminal_log,
             terminal::open_external_url,
+            hosts::switch_hosts,
+            hosts::hosts_writable,
+            hosts::set_hosts_free,
             client::client_defaults,
             client::list_alarm_types,
             client::client_devices,

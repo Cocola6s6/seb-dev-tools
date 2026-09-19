@@ -5,6 +5,7 @@ pub mod device;
 pub mod ecu;
 pub mod flink;
 pub mod frame;
+pub mod hosts;
 pub mod mq;
 pub mod payload;
 pub mod redis;
@@ -14,10 +15,37 @@ pub use flink::{FlinkJobStatus, FlinkState};
 pub use mq::Publisher;
 
 pub mod exchange {
+    use crate::config::ControlGlobalSettings;
+
     pub const CONTROL: &str = "seb.command.test";
     pub const QUERY: &str = "seb.query.command.test";
     pub const SET: &str = "seb.set.command.test";
     pub const VOICE: &str = "seb.voice.command.test";
+
+    #[derive(Clone, Copy, Debug)]
+    pub enum Kind {
+        Control,
+        Query,
+        Set,
+        Voice,
+    }
+
+    impl Kind {
+        pub fn resolve(self, c: &ControlGlobalSettings) -> String {
+            let (configured, fallback) = match self {
+                Kind::Control => (&c.exchange_control, CONTROL),
+                Kind::Query => (&c.exchange_query, QUERY),
+                Kind::Set => (&c.exchange_set, SET),
+                Kind::Voice => (&c.exchange_voice, VOICE),
+            };
+            let configured = configured.trim();
+            if configured.is_empty() {
+                fallback.to_string()
+            } else {
+                configured.to_string()
+            }
+        }
+    }
 }
 
 pub fn routing_key(exchange: &str, instance: &str) -> String {

@@ -52,11 +52,26 @@ pub struct ClientPoll {
 
 #[tauri::command]
 pub fn client_defaults() -> ClientDefaults {
+    let c = seb_core::config::load().settings.client;
+    let (host, port) = seb_core::config::split_endpoint(&c.default_inner_gw, DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT);
+
+    let mut profile = SimProfile::default();
+    if !c.default_coordinates.trim().is_empty() {
+        profile.coordinates = c.default_coordinates.trim().to_string();
+    }
+    profile.soc = c.default_soc;
+    profile.speed = c.default_speed as u16;
+    profile.deflection_angle = c.default_deflection_angle as f64;
+
     ClientDefaults {
-        host: DEFAULT_GATEWAY_HOST.to_string(),
-        port: DEFAULT_GATEWAY_PORT,
-        soft_version: seb_core::frame::DEFAULT_SOFT_VERSION.to_string(),
-        profile: SimProfile::default(),
+        host,
+        port,
+        soft_version: if c.default_soft_version.trim().is_empty() {
+            seb_core::frame::DEFAULT_SOFT_VERSION.to_string()
+        } else {
+            c.default_soft_version
+        },
+        profile,
     }
 }
 
@@ -82,7 +97,12 @@ pub async fn client_update_device(
     if config.device_no.trim().is_empty() {
         return Err("中控设备序列号不能为空".to_string());
     }
-    state.devices.upsert(config);
+    let (link, gateway_moved) = state.devices.upsert(config);
+    // 链路还挂在旧网关上，留着会让人以为新环境已经连上了
+    if gateway_moved && link.connected() {
+        link.note("网关地址已变更，自动断开连接");
+        link.disconnect().await;
+    }
     persist(&state).await;
     Ok(state.devices.states())
 }

@@ -90,6 +90,22 @@ pub async fn open_external_url(url: &str) -> Result<(), String> {
     invoke_void("open_external_url", UrlArg { url }).await
 }
 
+pub async fn switch_hosts() -> Result<String, String> {
+    invoke("switch_hosts", Empty {}).await
+}
+
+pub async fn hosts_writable() -> Result<bool, String> {
+    invoke("hosts_writable", Empty {}).await
+}
+
+pub async fn set_hosts_free(enable: bool) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct A {
+        enable: bool,
+    }
+    invoke_void("set_hosts_free", A { enable }).await
+}
+
 pub fn init_map_picker(container_id: &str, initial_coord: &str, on_pick: impl Fn(String) + 'static) {
     let cb = Closure::wrap(Box::new(move |coord: String| {
         on_pick(coord);

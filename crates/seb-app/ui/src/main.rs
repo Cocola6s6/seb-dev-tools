@@ -4,13 +4,16 @@ mod components;
 mod pages;
 mod state;
 
-use components::{GlobalToast, InstancePill, LogPane, QrNavButton};
+use components::{
+    GlobalToast, InfraPill, InstancePill, KnockEgg, LogPane, OnlinePills, ToolboxNavButton,
+    WhatsNewNotice,
+};
 use gloo_timers::future::TimeoutFuture;
 use pages::{
     battery::BatteryPage, client::ClientPage, control::ControlPage, deploy::DeployPage,
-    ecu::EcuPage,
+    ecu::EcuPage, settings::SettingsPage,
 };
-use state::{host_label, AppCtx, FrameLog, Page};
+use state::{AppCtx, FrameLog, Page};
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -142,29 +145,14 @@ fn App() -> View {
         }
     });
 
-    let show_pills = move || ctx.page.get() != Page::Client && ctx.page.get() != Page::Battery;
-    // 可能同时连不同环境，按网关地址分组，别把两个网关的在线数混在一起
-    let groups = create_memo(move || {
-        let mut groups: Vec<(String, usize, usize)> = Vec::new();
-        for d in ctx.client.devices.get_clone() {
-            let label = host_label(&d.config.host);
-            match groups.iter_mut().find(|g| g.0 == label) {
-                Some(g) => {
-                    g.1 += usize::from(d.connected);
-                    g.2 += 1;
-                }
-                None => groups.push((label, usize::from(d.connected), 1)),
-            }
-        }
-        groups
-    });
+    let show_pills = move || ctx.page_devices().is_none();
 
     view! {
         div(class=move || format!("app tint-{}", ctx.page.get().tint())) {
             // WKWebView 不认 -webkit-app-region，必须用 Tauri 自己的拖拽区标记
             header(class="header", data-tauri-drag-region="") {
                 nav(class="nav") {
-                    QrNavButton {}
+                    ToolboxNavButton {}
                     div(class=move || format!("nav-track active-{}", ctx.page.get().index())) {
                         div(class="nav-indicator") {}
                         NavItem(page=Page::Deploy, label="一键接入")
@@ -175,30 +163,11 @@ fn App() -> View {
                     }
                 }
                 div(class="pills") {
-                    span(class="pill") {
-                        (conn_icon(ctx, "MySQL", |c| c.mysql, ICON_DB))
-                        (conn_icon(ctx, "Redis", |c| c.redis, ICON_CACHE))
-                        (conn_icon(ctx, "MQ", |c| c.mq, ICON_MQ))
-                        (flink_icon(ctx, "Flink 在线/心跳 (high)", |c| c.flink.high.running, ICON_PULSE, "http://10.12.55.240/flink-operator/seb-flink-bike-iot-high/#/overview"))
-                        (flink_icon(ctx, "Flink 定位/遥测 (iot)", |c| c.flink.iot.running, ICON_PIN, "http://10.12.55.240/flink-operator/seb-flink-bike-iot/#/overview"))
-                        span { "内网" }
-                    }
+                    InfraPill {}
                     (if show_pills() {
                         view! { InstancePill {} }
                     } else {
-                        view! {
-                            Indexed(
-                                list=groups,
-                                view=move |(label, online, total): (String, usize, usize)| {
-                                    view! {
-                                        span(class="pill") {
-                                            span(class=if online > 0 { "dot on" } else { "dot off" }) {}
-                                            span { (format!("{label} 在线 {online}/{total}")) }
-                                        }
-                                    }
-                                }
-                            )
-                        }
+                        view! { OnlinePills {} }
                     })
                 }
             }
@@ -212,69 +181,31 @@ fn App() -> View {
                     div(class=show(ctx, Page::Ecu))     { EcuPage {} }
                     div(class=show(ctx, Page::Client))  { ClientPage {} }
                     div(class=show(ctx, Page::Battery)) { BatteryPage {} }
+                    div(class=show_settings(ctx))       { SettingsPage {} }
                 }
             }
 
             LogPane {}
             GlobalToast {}
-        }
-    }
-}
-
-const ICON_DB: &str = "M8 1.6c2.8 0 5 .8 5 1.8s-2.2 1.8-5 1.8-5-.8-5-1.8 2.2-1.8 5-1.8zM3 3.4v9.2c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V3.4M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8";
-const ICON_CACHE: &str = "M8.8 1.5L3.8 8.6H7.6L7.2 14.5L12.2 7.4H8.4L8.8 1.5z";
-const ICON_MQ: &str = "M2 3.5h12v9H2zM2 4l6 4.2L14 4";
-const ICON_PULSE: &str = "M1.5 8h2.5l2-4.5 3 9 2-4.5h3.5";
-const ICON_PIN: &str = "M8 1.5a4 4 0 0 0-4 4c0 3.2 4 8.5 4 8.5s4-5.3 4-8.5a4 4 0 0 0-4-4zm0 5.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z";
-
-fn flink_icon(
-    ctx: AppCtx,
-    label: &'static str,
-    pick: fn(&state::ConnState) -> bool,
-    d: &'static str,
-    url: &'static str,
-) -> View {
-    let ok = move || pick(&ctx.conn.get_clone());
-    let open = move |_| {
-        spawn_local(async move {
-            let _ = api::open_external_url(url).await;
-        });
-    };
-    view! {
-        div(class="btn-with-tip", on:dblclick=open, style="cursor:pointer;") {
-            span(class=move || if ok() { "conn-icon on" } else { "conn-icon off" }) {
-                svg(viewBox="0 0 16 16", width="13", height="13") {
-                    path(d=d, fill="none", stroke="currentColor", stroke-width="1.3",
-                         stroke-linecap="round", stroke-linejoin="round")
-                }
-            }
-            span(class="tooltip") {
-                (move || format!("{label} {} (双击打开)", if ok() { "正常" } else { "未连" }))
-            }
-        }
-    }
-}
-
-fn conn_icon(ctx: AppCtx, label: &'static str, pick: fn(&state::ConnState) -> bool, d: &'static str) -> View {
-    let ok = move || pick(&ctx.conn.get_clone());
-    view! {
-        div(class="btn-with-tip") {
-            span(class=move || if ok() { "conn-icon on" } else { "conn-icon off" }) {
-                svg(viewBox="0 0 16 16", width="13", height="13") {
-                    path(d=d, fill="none", stroke="currentColor", stroke-width="1.3",
-                         stroke-linecap="round", stroke-linejoin="round")
-                }
-            }
-            span(class="tooltip") {
-                (move || format!("{label} {}", if ok() { "正常" } else { "未连" }))
-            }
+            KnockEgg {}
+            WhatsNewNotice {}
         }
     }
 }
 
 fn show(ctx: AppCtx, page: Page) -> impl Fn() -> &'static str {
     move || {
-        if ctx.page.get() == page {
+        if !ctx.is_settings.get() && ctx.page.get() == page {
+            "page"
+        } else {
+            "page hidden"
+        }
+    }
+}
+
+fn show_settings(ctx: AppCtx) -> impl Fn() -> &'static str {
+    move || {
+        if ctx.is_settings.get() {
             "page"
         } else {
             "page hidden"

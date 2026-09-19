@@ -1,46 +1,4 @@
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-
-pub const MQ_HOST: &str = "10.12.54.12";
-pub const MQ_PORT: u16 = 5672;
-pub const MQ_USERNAME: &str = "qkswq";
-pub const MQ_PASSWORD: &str = "qkswq";
-
-pub const MYSQL_HOST: &str = "10.12.55.40";
-pub const MYSQL_PORT: u16 = 40022;
-pub const MYSQL_USERNAME: &str = "dev_code_test";
-pub const MYSQL_PASSWORD: &str = "BA6B2030B21A22F7";
-/// 只是连接串里的默认库，跨库查询一律写全限定名，所以不做成可配
-pub const MYSQL_DATABASE: &str = "seb_goods_db";
-
-pub const DEFAULT_DEVICE_NO: &str = "799497080";
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct MysqlConfig {
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub password: String,
-    pub database: String,
-}
-
-impl Default for MysqlConfig {
-    fn default() -> Self {
-        Self {
-            host: MYSQL_HOST.to_string(),
-            port: MYSQL_PORT,
-            username: MYSQL_USERNAME.to_string(),
-            password: MYSQL_PASSWORD.to_string(),
-            database: MYSQL_DATABASE.to_string(),
-        }
-    }
-}
-
-pub fn mysql() -> MysqlConfig {
-    MysqlConfig::default()
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
@@ -102,7 +60,6 @@ impl Default for ClientGlobalSettings {
     }
 }
 
-/// 中控上报报文里的各项取值。常用的几个在主功能页上，其余写死在组包函数里的挪到这里。
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ClientPayloadSettings {
@@ -133,7 +90,6 @@ pub struct ClientPayloadSettings {
     pub bms_current: u16,
     pub bms_voltage: u16,
     pub bms_cycle_count: u16,
-    /// 逗号分隔，固定取前 14 节，不足补 0
     pub bms_cell_voltages: String,
     pub bms_charge_interval: u16,
     pub bms_max_charge_interval: u16,
@@ -198,24 +154,7 @@ pub struct BatteryGlobalSettings {
     pub payload: BatteryPayloadSettings,
 }
 
-impl Default for BatteryGlobalSettings {
-    fn default() -> Self {
-        Self {
-            qr_url_template: "https://cosbike.net.cn/qr?{battery_no}".to_string(),
-            default_inner_gw: "10.12.55.31:32402".to_string(),
-            default_test_gw: "140.143.180.28:28081".to_string(),
-            default_prod_gw: "140.143.214.51:28081".to_string(),
-            default_iccid: "89860409081870640660".to_string(),
-            default_coordinates: "108.38,22.77".to_string(),
-            default_hw_version: "2.1.3".to_string(),
-            default_sw_version: "3.2.1".to_string(),
-            default_heartbeat_interval: 60,
-            payload: BatteryPayloadSettings::default(),
-        }
-    }
-}
-
-/// 电池上报报文里的各项取值。以前写死在组包函数里，现在全部可配。
+/// 与 seb-core config::BatteryPayloadSettings 对应
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct BatteryPayloadSettings {
@@ -225,7 +164,6 @@ pub struct BatteryPayloadSettings {
     pub total_voltage: u16,
     pub current: u16,
     pub battery_status: u8,
-    /// 逗号分隔，列表长度即报文里的数量字段
     pub cell_voltages: String,
     pub battery_temperatures: String,
     pub heat_film_temperatures: String,
@@ -291,6 +229,23 @@ impl Default for BatteryPayloadSettings {
     }
 }
 
+impl Default for BatteryGlobalSettings {
+    fn default() -> Self {
+        Self {
+            qr_url_template: "https://cosbike.net.cn/qr?{battery_no}".to_string(),
+            default_inner_gw: "10.12.55.31:32402".to_string(),
+            default_test_gw: "140.143.180.28:28081".to_string(),
+            default_prod_gw: "140.143.214.51:28081".to_string(),
+            default_iccid: "89860409081870640660".to_string(),
+            default_coordinates: "108.38,22.77".to_string(),
+            default_hw_version: "2.1.3".to_string(),
+            default_sw_version: "3.2.1".to_string(),
+            default_heartbeat_interval: 60,
+            payload: BatteryPayloadSettings::default(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ControlGlobalSettings {
@@ -315,6 +270,9 @@ impl Default for ControlGlobalSettings {
     }
 }
 
+
+const DEFAULT_HOSTS_INNER: &str = include_str!("../../../../seb-core/src/hosts/inner.hosts");
+const DEFAULT_HOSTS_UAT: &str = include_str!("../../../../seb-core/src/hosts/uat.hosts");
 
 /// 三击百宝箱触发什么
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -347,8 +305,8 @@ impl Default for GlobalSettings {
             control: ControlGlobalSettings::default(),
             egg_url: String::new(),
             triple_click: TripleClickAction::default(),
-            hosts_inner: crate::hosts::DEFAULT_HOSTS_INNER.to_string(),
-            hosts_uat: crate::hosts::DEFAULT_HOSTS_UAT.to_string(),
+            hosts_inner: DEFAULT_HOSTS_INNER.to_string(),
+            hosts_uat: DEFAULT_HOSTS_UAT.to_string(),
             hosts_prod: String::new(),
         }
     }
@@ -365,65 +323,19 @@ pub struct AppConfig {
     pub last_seen_version: String,
     pub deploy: DeployDefaults,
     pub settings: GlobalSettings,
-    pub sim_devices: Vec<crate::device::DeviceConfig>,
-    pub sim_batteries: Vec<crate::battery::BatteryConfig>,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            instance: "0".to_string(),
-            device_no: DEFAULT_DEVICE_NO.to_string(),
+            instance: "0".into(),
+            device_no: String::new(),
             bike_no: String::new(),
             battery_no: String::new(),
             city_id: 0,
             last_seen_version: String::new(),
             deploy: DeployDefaults::default(),
             settings: GlobalSettings::default(),
-            sim_devices: Vec::new(),
-            sim_batteries: Vec::new(),
         }
-    }
-}
-
-pub fn config_path() -> Result<PathBuf> {
-    let dir = dirs::config_dir()
-        .context("无法定位用户配置目录")?
-        .join("seb-dev-tools");
-    std::fs::create_dir_all(&dir).with_context(|| format!("创建配置目录失败: {}", dir.display()))?;
-    Ok(dir.join("config.json"))
-}
-
-pub fn load() -> AppConfig {
-    let Ok(path) = config_path() else {
-        return AppConfig::default();
-    };
-    std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
-}
-
-pub fn save(cfg: &AppConfig) -> Result<()> {
-    let path = config_path()?;
-    let body = serde_json::to_string_pretty(cfg)?;
-    std::fs::write(&path, body).with_context(|| format!("写入配置失败: {}", path.display()))?;
-    Ok(())
-}
-
-/// "host:port" 拆开，缺省或写坏时回落到内置地址
-pub fn split_endpoint(raw: &str, host_fallback: &str, port_fallback: u16) -> (String, u16) {
-    let raw = raw.trim();
-    let Some((host, port)) = raw.rsplit_once(':') else {
-        let host = raw;
-        return if host.is_empty() {
-            (host_fallback.to_string(), port_fallback)
-        } else {
-            (host.to_string(), port_fallback)
-        };
-    };
-    match (host.trim(), port.trim().parse::<u16>()) {
-        (h, Ok(p)) if !h.is_empty() && p != 0 => (h.to_string(), p),
-        _ => (host_fallback.to_string(), port_fallback),
     }
 }

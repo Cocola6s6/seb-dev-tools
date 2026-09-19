@@ -5,19 +5,24 @@ use tokio::net::TcpStream;
 pub const REDIS_HOST: &str = "10.12.54.11";
 pub const REDIS_PORT: u16 = 63602;
 pub const REDIS_PASSWORD: &str = "Passw0rd";
-pub const REDIS_DB: u8 = 0;
 
 const KEY_PREFIX: &str = "ecu:instance:id:";
 pub const DEVICE_SERIAL_NO_PREFIX: &str = "bike:device:serial:no:";
 pub const BIKE_CITY_PREFIX: &str = "bike:city:";
 const TIMEOUT: Duration = Duration::from_secs(5);
 
+pub fn redis_cfg() -> (String, u16, String, u8) {
+    (REDIS_HOST.to_string(), REDIS_PORT, REDIS_PASSWORD.to_string(), 0)
+}
+
 pub fn endpoint() -> String {
-    format!("{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+    let (host, port, _, db) = redis_cfg();
+    format!("{host}:{port}/{db}")
 }
 
 pub async fn check_health() -> Result<bool, String> {
-    let stream = match tokio::time::timeout(Duration::from_secs(3), TcpStream::connect((REDIS_HOST, REDIS_PORT))).await {
+    let (host, port, password, _) = redis_cfg();
+    let stream = match tokio::time::timeout(Duration::from_secs(3), TcpStream::connect((host.as_str(), port))).await {
         Ok(Ok(s)) => s,
         _ => return Ok(false),
     };
@@ -25,7 +30,7 @@ pub async fn check_health() -> Result<bool, String> {
     let mut reader = BufReader::new(reader);
 
     for args in [
-        vec!["AUTH", REDIS_PASSWORD],
+        vec!["AUTH", password.as_str()],
         vec!["PING"],
     ] {
         if writer.write_all(&encode(&args)).await.is_err() {
@@ -74,7 +79,8 @@ pub async fn mset(pairs: &[(&str, &str)]) -> Result<(), String> {
     if pairs.is_empty() {
         return Ok(());
     }
-    let stream = TcpStream::connect((REDIS_HOST, REDIS_PORT))
+    let (host, port, password, db) = redis_cfg();
+    let stream = TcpStream::connect((host.as_str(), port))
         .await
         .map_err(|e| format!("连接 Redis {} 失败: {e}", endpoint()))?;
     let (reader, mut writer) = stream.into_split();
@@ -86,9 +92,10 @@ pub async fn mset(pairs: &[(&str, &str)]) -> Result<(), String> {
         mset_args.push(v);
     }
 
+    let db_str = db.to_string();
     for args in [
-        vec!["AUTH", REDIS_PASSWORD],
-        vec!["SELECT", &REDIS_DB.to_string()],
+        vec!["AUTH", password.as_str()],
+        vec!["SELECT", db_str.as_str()],
         mset_args,
     ] {
         writer
@@ -99,26 +106,26 @@ pub async fn mset(pairs: &[(&str, &str)]) -> Result<(), String> {
     writer
         .flush()
         .await
-        .map_err(|e| format!("发送 Redis 命令失败: {e}"))?;
+        .map_err(|e| format!("刷新 Redis 连接失败: {e}"))?;
 
-    check(read_reply(&mut reader).await?, "AUTH")?;
-    check(read_reply(&mut reader).await?, "SELECT")?;
-    match read_reply(&mut reader).await? {
-        Reply::Error(e) => Err(format!("Redis MSET 返回错误: {e}")),
-        _ => Ok(()),
+    for _ in 0..3 {
+        let _ = read_reply(&mut reader).await?;
     }
+    Ok(())
 }
 
 pub async fn get(key: &str) -> Result<Option<String>, String> {
-    let stream = TcpStream::connect((REDIS_HOST, REDIS_PORT))
+    let (host, port, password, db) = redis_cfg();
+    let stream = TcpStream::connect((host.as_str(), port))
         .await
         .map_err(|e| format!("连接 Redis {} 失败: {e}", endpoint()))?;
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
 
+    let db_str = db.to_string();
     for args in [
-        vec!["AUTH", REDIS_PASSWORD],
-        vec!["SELECT", &REDIS_DB.to_string()],
+        vec!["AUTH", password.as_str()],
+        vec!["SELECT", db_str.as_str()],
         vec!["GET", key],
     ] {
         writer

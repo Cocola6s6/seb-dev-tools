@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_GATEWAY_HOST: &str = "bike-seb-inner-test.costrip.cn";
 pub const DEFAULT_GATEWAY_PORT: u16 = 32405;
 
-const PING_INTERVAL: Duration = Duration::from_secs(60);
+const DEFAULT_PING_SECS: u64 = 60;
 const MAX_BUFFERED: usize = 500;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -60,7 +60,7 @@ pub struct SimProfile {
 impl Default for SimProfile {
     fn default() -> Self {
         Self {
-            coordinates: "116.29721053978871,40.05213174125153".into(),
+            coordinates: "108.38,22.77".into(),
             vehicle_state: 0,
             motion: false,
             soc: 80,
@@ -79,7 +79,7 @@ impl Default for SimProfile {
 
 impl SimProfile {
     fn coords(&self) -> (f64, f64) {
-        frame::parse_coordinates(&self.coordinates).unwrap_or((116.397428, 39.90923))
+        frame::parse_coordinates(&self.coordinates).unwrap_or((108.38, 22.77))
     }
 
     pub fn location_opts(&self) -> frame::LocationOpts {
@@ -208,9 +208,12 @@ impl DeviceLink {
         self.shared.cfg()
     }
 
-    /// 改配置不影响已经建立的链路，网关地址要重连才生效
-    pub fn set_config(&self, cfg: DeviceConfig) {
-        *self.shared.cfg.lock().unwrap() = cfg;
+    /// 改配置不影响已经建立的链路，返回值表示网关地址是否变了
+    pub fn set_config(&self, cfg: DeviceConfig) -> bool {
+        let mut cur = self.shared.cfg.lock().unwrap();
+        let moved = cur.host != cfg.host || cur.port != cfg.port;
+        *cur = cfg;
+        moved
     }
 
     pub fn device_no(&self) -> String {
@@ -236,7 +239,12 @@ impl DeviceLink {
 
     pub async fn send_location(&self) -> Result<(), String> {
         let profile = self.profile();
-        let data = frame::location(&self.current_device_no(), &profile.location_opts(), unix_now());
+        let data = frame::location(
+            &self.current_device_no(),
+            &profile.location_opts(),
+            unix_now(),
+            &payload_settings(),
+        );
         self.send(&data, "定位上报").await
     }
 
@@ -247,6 +255,7 @@ impl DeviceLink {
             profile.soc,
             &profile.battery_no,
             unix_now(),
+            &payload_settings(),
         );
         self.send(&data, "BMS 电池数据").await
     }
@@ -259,7 +268,7 @@ impl DeviceLink {
 
     pub async fn send_ping(&self) -> Result<(), String> {
         let profile = self.profile();
-        let data = frame::ping(&self.current_device_no(), profile.soc, 0.1);
+        let data = frame::ping(&self.current_device_no(), profile.soc, &payload_settings());
         self.send(&data, "心跳").await
     }
 
@@ -287,7 +296,12 @@ impl DeviceLink {
     pub async fn connect(&self) -> Result<(), String> {
         let cfg = self.config();
         let (port, heartbeat) = (cfg.port, cfg.heartbeat);
-        let soft_version = cfg.soft_version.as_str();
+        let configured = crate::config::load().settings.client.default_soft_version;
+        let soft_version = if configured.trim().is_empty() {
+            cfg.soft_version.clone()
+        } else {
+            configured
+        };
         let host = cfg.host.trim();
         let device_no = cfg.device_no.trim();
         if host.is_empty() {
@@ -315,7 +329,7 @@ impl DeviceLink {
         *self.writer.lock().await = Some(write_half);
         self.shared.push(FrameLog::sys(format!("已连接 {endpoint}")));
 
-        self.send(&frame::login(device_no, soft_version, unix_now()), "登录")
+        self.send(&frame::login(device_no, &soft_version, unix_now()), "登录")
             .await?;
 
         {
@@ -419,6 +433,7 @@ impl DeviceLink {
                                         &reply_device_no,
                                         &profile.location_opts(),
                                         unix_now(),
+                                        &payload_settings(),
                                     );
                                     if w.write_all(&loc).await.is_ok() {
                                         shared.push(FrameLog {
@@ -443,17 +458,19 @@ impl DeviceLink {
         }
 
         if heartbeat {
+            let interval = ping_interval();
             let shared = self.shared.clone();
             let writer = self.writer.clone();
             let device_no = device_no.to_string();
             tokio::spawn(async move {
                 loop {
-                    tokio::time::sleep(PING_INTERVAL).await;
+                    tokio::time::sleep(interval).await;
                     if shared.generation() != generation || !shared.connected.load(Ordering::Relaxed)
                     {
                         return;
                     }
-                    let data = frame::ping(&device_no, 255, 0.1);
+                    let soc = shared.cfg.lock().unwrap().profile.soc;
+                    let data = frame::ping(&device_no, soc, &payload_settings());
                     let mut guard = writer.lock().await;
                     let Some(w) = guard.as_mut() else { return };
                     if w.write_all(&data).await.is_ok() {
@@ -504,6 +521,15 @@ impl DeviceLink {
     }
 }
 
+fn payload_settings() -> crate::config::ClientPayloadSettings {
+    crate::config::load().settings.client.payload
+}
+
+fn ping_interval() -> Duration {
+    let secs = crate::config::load().settings.client.default_heartbeat_interval;
+    Duration::from_secs(if secs == 0 { DEFAULT_PING_SECS } else { secs })
+}
+
 fn unix_now() -> u32 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -547,22 +573,23 @@ pub struct DeviceFleet {
 
 impl DeviceFleet {
     pub fn seed(&self, configs: Vec<DeviceConfig>) {
-        for cfg in configs {
+        for cfg in configs.into_iter().rev() {
             self.upsert(cfg);
         }
     }
 
-    pub fn upsert(&self, cfg: DeviceConfig) -> Arc<DeviceLink> {
+    /// 返回值：网关地址是否变了，变了说明换了环境，旧链路得断开
+    pub fn upsert(&self, cfg: DeviceConfig) -> (Arc<DeviceLink>, bool) {
         let mut links = self.links.lock().unwrap();
         match links.iter().find(|l| l.device_no() == cfg.device_no) {
             Some(link) => {
-                link.set_config(cfg);
-                link.clone()
+                let moved = link.set_config(cfg);
+                (link.clone(), moved)
             }
             None => {
                 let link = Arc::new(DeviceLink::new(cfg));
-                links.push(link.clone());
-                link
+                links.insert(0, link.clone());
+                (link, false)
             }
         }
     }

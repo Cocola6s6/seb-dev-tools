@@ -74,7 +74,7 @@
       color: inherit !important;
     }
 
-    input, textarea, .log-line, .log-line *, .selectable, pre, code {
+    input, textarea, .log-line, .log-line *, pre, code {
       -webkit-user-select: text !important;
       -moz-user-select: text !important;
       -ms-user-select: text !important;
@@ -94,6 +94,7 @@
     .tint-ecu     { --accent: #5c5ce0; --accent-2: #8285f0; --glow: rgba(92, 92, 224, .15); --bg-top: #eaeafc; }
     .tint-client  { --accent: #0f9d76; --accent-2: #3fc39b; --glow: rgba(15, 157, 118, .15); --bg-top: #e3f7f0; }
     .tint-battery { --accent: #0d9488; --accent-2: #14b8a6; --glow: rgba(13, 148, 136, .15); --bg-top: #e8f7f5; }
+    .tint-settings{ --accent: #475569; --accent-2: #64748b; --glow: rgba(71, 85, 105, .16); --bg-top: #f1f5f9; }
 
     .app::before {
       content: "";
@@ -200,35 +201,86 @@
       display: inline-flex;
       align-items: center;
     }
+    button.nav-qr-icon-btn,
     .nav-qr-icon-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #ffffff;
-      border: 1px solid var(--line);
-      box-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
-      color: var(--text-2);
+      position: relative;
+      z-index: 9992;
+      width: 36px !important;
+      height: 36px !important;
+      min-width: 36px !important;
+      min-height: 36px !important;
+      border-radius: 50% !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      background: transparent !important;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      color: var(--text-2) !important;
       cursor: pointer;
       margin-left: 2px;
       margin-right: 4px;
-      padding: 0;
+      padding: 0 !important;
       transition: all 0.15s ease;
       flex: none;
     }
+    button.nav-qr-icon-btn:hover,
+    button.nav-qr-icon-btn:hover:not(:disabled),
     .nav-qr-icon-btn:hover {
-      background: #f8fafc;
-      color: var(--accent);
-      border-color: #cbd5e1;
-      transform: scale(1.05);
+      background: rgba(0, 0, 0, 0.06) !important;
+      color: var(--text) !important;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      transform: scale(1.08);
     }
+    button.nav-qr-icon-btn.active,
+    button.nav-qr-icon-btn.active:hover,
+    button.nav-qr-icon-btn.active:not(:disabled),
     .nav-qr-icon-btn.active {
-      background: var(--accent);
-      color: #ffffff;
-      border-color: var(--accent);
-      box-shadow: 0 2px 8px var(--glow);
+      background: var(--accent) !important;
+      color: #ffffff !important;
+      border: none !important;
+      outline: none !important;
+      box-shadow: 0 2px 10px var(--glow) !important;
+    }
+    button.nav-qr-icon-btn:active,
+    .nav-qr-icon-btn:active {
+      transform: scale(0.95);
+    }
+    /* 顶栏按钮的说明比较长，原生 title 要等一秒才出来，这里自己画一个 */
+    .nav-qr-tip {
+      visibility: hidden;
+      opacity: 0;
+      position: absolute;
+      top: calc(100% + 8px);
+      right: -4px;
+      white-space: nowrap;
+      background: #1e293b;
+      color: #f8fafc;
+      font-size: 11px;
+      font-weight: 400;
+      padding: 5px 10px;
+      border-radius: 6px;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.28);
+      pointer-events: none;
+      z-index: 9993;
+      transition: opacity .15s ease, visibility .15s ease;
+    }
+    .nav-qr-tip::after {
+      content: "";
+      position: absolute;
+      bottom: 100%;
+      right: 18px;
+      border-width: 4px;
+      border-style: solid;
+      border-color: transparent transparent #1e293b transparent;
+    }
+    .nav-qr-container:hover .nav-qr-tip {
+      visibility: visible;
+      opacity: 1;
+      transition-delay: .5s;
     }
     .popover-backdrop {
       position: fixed;
@@ -295,24 +347,17 @@
       gap: 6px;
       min-height: 20px;
     }
-    .qr-status-text {
-      font-size: 11px;
-      color: var(--muted);
-      font-weight: 500;
-    }
-    .qr-status-text.on {
-      color: var(--ok);
-      font-weight: 600;
-    }
-    .qr-status-text.off {
-      color: var(--muted);
-    }
     .qr-bike-no {
       font-family: Menlo, "SF Mono", monospace;
       font-size: 11px;
       font-weight: 600;
       color: var(--text);
       text-align: center;
+      min-width: 0;
+      max-width: calc(100% - 22px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .qr-copy-btn {
       position: absolute;
@@ -392,6 +437,9 @@
       margin-bottom: 16px;
       box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
     }
+    /* 字段直接叠在卡片里时自己撑开间距，不像 .row/.grid 那样有栅格的 gap */
+    .section.stack { display: flex; flex-direction: column; gap: 18px; }
+
     .section-title {
       display: flex;
       align-items: center;
@@ -420,6 +468,10 @@
       color: var(--muted);
       background: #f2f5f9;
       border-radius: 999px;
+    }
+    .section-title .tag.tag-required {
+      color: var(--accent);
+      background: var(--glow);
     }
     .pill.instance-pill-badge {
       cursor: pointer;
@@ -622,6 +674,7 @@
       font-size: 12px;
       color: var(--text);
       flex: 1;
+      white-space: nowrap;
     }
     .device-dropdown-item.active .dev-no {
       color: var(--accent);
@@ -717,17 +770,6 @@
     .field > label { font-size: 12px; color: var(--muted); }
     /* 输入框 + 附带按钮：输入框占满列宽，按钮贴在右边，避免出现一个特别窄的框 */
     .combo { position: relative; }
-    .combo-input { position: relative; display: flex; }
-    .combo-input input { flex: 1; min-width: 0; padding-right: 26px; }
-    .combo-caret {
-      position: absolute; right: 0; top: 0; bottom: 0; width: 26px;
-      display: flex; align-items: center; justify-content: center;
-      padding: 0; border: none; background: none; box-shadow: none;
-      color: var(--muted); cursor: pointer;
-    }
-    .combo-caret:hover { color: var(--accent); }
-    .combo-caret svg { transition: transform .15s ease; }
-    .combo-caret.open svg { transform: rotate(180deg); }
     .combo-backdrop { position: fixed; inset: 0; z-index: 25; background: transparent; }
     .combo-list {
       position: absolute;
@@ -757,67 +799,6 @@
     .dev-dot.on { background: var(--accent); border-color: var(--accent); }
     .combo-item .n { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .field > label { display: flex; align-items: center; gap: 2px; }
-    .help {
-      position: relative;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--line-soft);
-      border: 1px solid var(--line);
-      font-size: 10px;
-      font-weight: 700;
-      color: var(--accent);
-      cursor: pointer;
-      margin-left: 4px;
-      transition: all .15s ease;
-    }
-    .help:hover {
-      background: var(--accent);
-      color: #ffffff;
-      border-color: var(--accent);
-    }
-    .help .tip {
-      visibility: hidden;
-      opacity: 0;
-      position: absolute;
-      left: -8px;
-      bottom: calc(100% + 6px);
-      white-space: nowrap;
-      user-select: text;
-      -webkit-user-select: text;
-      cursor: text;
-      background: #1e293b;
-      color: #ffffff;
-      font-size: 11px;
-      font-weight: 400;
-      padding: 8px 12px;
-      border-radius: 8px;
-      line-height: 1.8;
-      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.28);
-      z-index: 1000;
-      transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
-      transform: translateY(4px);
-      pointer-events: none;
-    }
-    .help:hover .tip,
-    .help .tip:hover {
-      visibility: visible;
-      opacity: 1;
-      transform: translateY(0);
-      pointer-events: auto;
-    }
-    .help .tip::after {
-      content: "";
-      position: absolute;
-      top: 100%;
-      left: 10px;
-      border-width: 5px;
-      border-style: solid;
-      border-color: #1e293b transparent transparent transparent;
-    }
     /* 中控客户端响应式分屏 (4:6 比例，带平滑抽屉式位移动画) */
     .client-split-container {
       display: flex;
@@ -858,10 +839,10 @@
 
     @media (min-width: 1300px) {
       .client-split-left {
-        flex: 0 0 40%;
-        width: 40%;
-        min-width: 320px;
-        max-width: 40%;
+        flex: 0 0 30%;
+        width: 30%;
+        min-width: 280px;
+        max-width: 30%;
         opacity: 1;
         transform: translateX(0);
         overflow-y: auto;
@@ -870,7 +851,7 @@
         margin-right: 24px;
       }
       .client-split-right {
-        flex: 1 1 60%;
+        flex: 1 1 70%;
         min-width: 0;
       }
       .client-split-right .device-layout {
@@ -887,6 +868,7 @@
       }
       .client-split-right .device-item {
         flex: none;
+        padding-right: 26px;
       }
       .client-split-right .device-sub {
         display: none;
@@ -923,7 +905,7 @@
     .client-qr-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 20px;
+      gap: 14px;
       width: 100%;
     }
     .client-qr-card {
@@ -931,7 +913,7 @@
       border: 1.5px solid var(--line);
       border-radius: 14px;
       box-shadow: 0 2px 10px rgba(16, 24, 40, 0.05);
-      padding: 18px 16px 14px;
+      padding: 14px 12px 12px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -955,7 +937,7 @@
 
     .client-qr-card .qr-svg-container {
       width: 100%;
-      max-width: 215px;
+      max-width: 150px;
       aspect-ratio: 1 / 1;
       height: auto;
       background: #ffffff;
@@ -1015,14 +997,6 @@
       pointer-events: none;
       z-index: 2;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    }
-    .device-env-tag {
-      font-size: 10px;
-      line-height: 1.2;
-      padding: 2px 5px;
-      border-radius: 4px;
-      font-weight: 600;
-      flex: none;
     }
     .badge-env-inner {
       background: #e6f7ef;
@@ -1120,16 +1094,27 @@
       overflow-y: auto;
       transition: all 0.32s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .device-item { padding: 8px 12px; border-radius: 10px; border: 1.5px solid transparent; cursor: pointer; transition: all .15s ease; }
+    .device-item { position: relative; padding: 8px 12px; border-radius: 10px; border: 1.5px solid transparent; cursor: pointer; transition: all .15s ease; }
+    /* 左侧色条标环境，与环境标签同一套配色，不额外占用编号的宽度 */
+    .device-item::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px;
+                           border-radius: 0 3px 3px 0; background: var(--env-color, transparent); }
+    .env-inner { --env-color: #059669; }
+    .env-test { --env-color: #2563eb; }
+    .env-prod { --env-color: #dc2626; }
+    .env-custom { --env-color: #7c3aed; }
+    .env-none { --env-color: #d1d5db; }
     .device-item:hover { background: var(--bg-top); }
     .device-item:active { transform: scale(0.97); }
     .device-item.active { background: var(--bg-top); border-color: var(--accent); }
     .device-item.active .device-no { color: var(--accent); }
     .device-item-top { display: flex; align-items: center; gap: 7px; }
-    .device-no { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .device-del { flex: none; visibility: hidden; border: none; background: none; color: var(--muted);
+    .device-no { font-size: 13px; font-weight: 600; flex: 1; min-width: 0;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* 悬停才出现，且不占位：编号要把这一行的宽度全部用满 */
+    .device-del { position: absolute; top: 7px; right: 7px; opacity: 0; border: none; color: var(--muted);
+                  background: var(--bg-top); border-radius: 6px; transition: opacity .12s ease;
                   display: inline-flex; align-items: center; justify-content: center; padding: 2px; cursor: pointer; line-height: 1; }
-    .device-item:hover .device-del { visibility: visible; }
+    .device-item:hover .device-del { opacity: 1; }
     .device-del:hover { color: var(--error); }
     .device-sub { margin-left: 14px; font-size: 11px; color: var(--muted);
                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1138,8 +1123,99 @@
       .device-layout { grid-template-columns: minmax(0, 1fr); }
       .device-list { position: static; }
       .device-items { flex-direction: row; flex-wrap: wrap; max-height: none; gap: 8px; }
-      .device-item { flex: none; }
+      .device-item { flex: none; padding-right: 26px; }
       .device-sub { display: none; }
+    }
+    /* 百宝箱三击敲鸡蛋 */
+    .egg-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(12, 18, 32, 0.68);
+      backdrop-filter: blur(3px);
+      cursor: zoom-out;
+      animation: eggFade .18s ease-out;
+    }
+    @keyframes eggFade {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+    .egg-img {
+      max-width: 76vw;
+      max-height: 76vh;
+      border-radius: 14px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+      animation: eggPop .28s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    /* 藏起来但仍然会下载，加载完成才换成展示态 */
+    .egg-img.waiting { display: none; }
+    .egg-knock {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 22px;
+      max-width: 82vw;
+      text-align: center;
+      font-size: clamp(26px, 5vw, 54px);
+      font-weight: 700;
+      line-height: 1.3;
+      letter-spacing: 2px;
+      color: #fff;
+      text-shadow: 0 0 28px rgba(120, 170, 255, .55), 0 10px 30px rgba(0, 0, 0, .45);
+      animation: eggShout .5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    /* 文字先冲出来再轻轻呼吸，等的这几秒才像在酝酿 */
+    @keyframes eggShout {
+      0% { opacity: 0; transform: scale(0.6); filter: blur(6px); }
+      100% { opacity: 1; transform: scale(1); filter: blur(0); }
+    }
+    .egg-knock span { animation: eggBreathe 2.2s ease-in-out infinite; }
+    @keyframes eggBreathe {
+      0%, 100% { transform: scale(1); text-shadow: 0 0 28px rgba(120, 170, 255, .55), 0 10px 30px rgba(0, 0, 0, .45); }
+      50% { transform: scale(1.04); text-shadow: 0 0 46px rgba(150, 200, 255, .85), 0 10px 30px rgba(0, 0, 0, .45); }
+    }
+    /* 小锤以柄尾为支点抡下来，落点是蛋的右肩 */
+    .egg-hammer {
+      transform-box: view-box;
+      transform-origin: 34px 27px;
+      animation: eggHammer .7s ease-in-out infinite;
+    }
+    @keyframes eggHammer {
+      0%, 100% { transform: rotate(40deg); }
+      18% { transform: rotate(0deg); }
+      34% { transform: rotate(16deg); }
+    }
+    /* 裂纹按 steps 一段段长，和每次敲击对上 */
+    .egg-crack {
+      fill: none;
+      stroke: rgba(15, 23, 42, .35);
+      stroke-width: 1;
+      stroke-linecap: round;
+      stroke-dasharray: 7;
+      stroke-dashoffset: 7;
+      animation: eggCrack 2.8s steps(4) .15s infinite;
+    }
+    @keyframes eggCrack {
+      to { stroke-dashoffset: 0; }
+    }
+    /* 蛋以底部为轴，被敲到的那一下往左偏一点再晃回来 */
+    .egg-shell.knocking {
+      transform-box: view-box;
+      transform-origin: 12px 28px;
+      animation: eggKnock .7s ease-in-out infinite;
+    }
+    @keyframes eggKnock {
+      0%, 100% { transform: rotate(0); }
+      20% { transform: rotate(-5deg); }
+      50% { transform: rotate(3deg); }
+      75% { transform: rotate(-1.5deg); }
+    }
+    @keyframes eggPop {
+      0% { opacity: 0; transform: scale(0.88) rotate(-2deg); }
+      100% { opacity: 1; transform: scale(1) rotate(0); }
     }
     .field-inline { display: flex; align-items: center; gap: 8px; }
     .field-inline > input, .field-inline > select { flex: 1; min-width: 0; }
@@ -1178,6 +1254,7 @@
       font-size: 12px;
       line-height: 1.6;
     }
+    textarea.hosts { min-height: 200px; }
     input:focus, select:focus, textarea:focus {
       background: #fff;
       border-color: var(--accent-2);
@@ -1466,11 +1543,11 @@
     .global-toast {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      padding: 6px 16px 6px 10px;
+      gap: 9px;
+      padding: 8px 18px 8px 11px;
       background: rgba(255, 255, 255, 0.95);
       color: var(--text);
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 500;
       border-radius: 999px;
       box-shadow: 0 12px 30px rgba(16, 24, 40, 0.12), 0 2px 10px var(--glow);
@@ -1484,8 +1561,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       border-radius: 50%;
       background: var(--bg-top);
       color: var(--accent);
@@ -1493,8 +1570,8 @@
       transition: background 0.3s ease, color 0.3s ease;
     }
     .global-toast-icon {
-      width: 14px;
-      height: 14px;
+      width: 15px;
+      height: 15px;
       color: var(--accent);
       flex: none;
       transition: color 0.3s ease;
@@ -1513,6 +1590,146 @@
       100% {
         opacity: 1;
         transform: translate(-50%, 0) scale(1);
+      }
+    }
+
+    /* WhatsNew Notice Modal - Minimal & Clean */
+    .whats-new-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 9998;
+      background: rgba(15, 23, 42, 0.18);
+      backdrop-filter: blur(1.5px);
+      -webkit-backdrop-filter: blur(1.5px);
+      animation: fadeIn .15s ease-out;
+    }
+    .whats-new-card {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 390px;
+      max-width: calc(100vw - 36px);
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 14px 36px rgba(16, 24, 40, 0.14), 0 1px 4px rgba(16, 24, 40, 0.04);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      animation: whatsNewPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+      overflow: hidden;
+    }
+    .whats-new-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 16px 11px;
+      background: #fafbfd;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .whats-new-title-group {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .whats-new-tag {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--accent);
+      background: var(--glow);
+      padding: 1px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.3px;
+    }
+    .whats-new-title {
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: -0.1px;
+    }
+    .whats-new-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0;
+      transition: all .12s ease;
+    }
+    .whats-new-close:hover {
+      background: var(--line-soft);
+      color: var(--text);
+    }
+    .whats-new-body {
+      padding: 14px 16px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .whats-new-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .whats-new-bullet {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #94a3b8;
+      opacity: 0.7;
+      flex: none;
+      margin-top: 7px;
+    }
+    .whats-new-text {
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.55;
+      color: var(--text-2);
+    }
+    .whats-new-label {
+      font-weight: 500;
+      color: var(--text);
+    }
+    .whats-new-foot {
+      display: flex;
+      justify-content: flex-end;
+      padding: 8px 16px 14px;
+      background: #ffffff;
+    }
+    .whats-new-btn {
+      padding: 5px 18px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      box-shadow: 0 1px 4px var(--glow);
+      transition: all .12s ease;
+    }
+    .whats-new-btn:hover {
+      background: var(--accent-2);
+      box-shadow: 0 2px 8px var(--glow);
+    }
+    .whats-new-btn:active {
+      transform: scale(0.98);
+    }
+    @keyframes whatsNewPop {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -47%) scale(0.96);
+      }
+      100% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
       }
     }
 
@@ -1597,345 +1814,6 @@
       background: #edf2f7;
       color: var(--text);
       border-color: #cbd5e1;
-    }
-
-    /* 电池客户端专属样式 */
-    .battery-page-container {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      padding: 12px 16px;
-      height: 100%;
-      overflow-y: auto;
-    }
-    .battery-info-card, .battery-location-card {
-      padding: 14px 18px;
-    }
-    .battery-card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--line-soft);
-    }
-    .battery-card-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text);
-    }
-    .battery-card-tip {
-      font-size: 11.5px;
-      color: #94a3b8;
-    }
-    .battery-fields-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 12px 16px;
-      align-items: center;
-    }
-    .battery-field-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .battery-label {
-      font-size: 12.5px;
-      color: var(--text-2);
-      white-space: nowrap;
-      min-width: 72px;
-      text-align: right;
-    }
-    .req-star {
-      color: #ef4444;
-      font-weight: bold;
-    }
-    .battery-input-wrap, .battery-env-wrapper {
-      flex: 1;
-      position: relative;
-    }
-    .battery-input {
-      width: 100%;
-      height: 32px;
-      padding: 4px 10px;
-      font-size: 12.5px;
-      font-family: inherit;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #ffffff;
-      color: var(--text);
-      outline: none;
-      transition: border-color .15s, box-shadow .15s;
-    }
-    .battery-input:focus {
-      border-color: #2563eb;
-      box-shadow: 0 0 0 2px rgba(37, 99, 235, .12);
-    }
-    .battery-input.primary-field {
-      font-weight: 500;
-      color: #1e3a8a;
-      background: #f8faff;
-    }
-    .battery-env-btn {
-      width: 100%;
-      height: 32px;
-      padding: 4px 10px;
-      font-size: 12px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #f8fafc;
-      color: var(--text);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      transition: all .15s;
-    }
-    .battery-env-btn:hover, .battery-env-btn.active {
-      border-color: #2563eb;
-      background: #eff6ff;
-    }
-    .battery-env-dropdown {
-      position: absolute;
-      top: calc(100% + 4px);
-      left: 0;
-      right: 0;
-      background: #ffffff;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, .1);
-      z-index: 100;
-      padding: 4px;
-    }
-    .battery-env-opt {
-      padding: 7px 10px;
-      font-size: 12px;
-      border-radius: 5px;
-      cursor: pointer;
-      color: var(--text-2);
-      transition: background .12s;
-    }
-    .battery-env-opt:hover {
-      background: #eff6ff;
-      color: #2563eb;
-    }
-    .battery-env-opt.active {
-      background: #dbeafe;
-      color: #1d4ed8;
-      font-weight: 600;
-    }
-    .battery-location-body {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-    .location-coord-item {
-      flex: 1;
-      min-width: 320px;
-    }
-    .battery-coord-input-group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex: 1;
-    }
-    .coord-input {
-      font-family: monospace;
-      min-width: 220px;
-    }
-    .btn-map-picker {
-      height: 32px;
-      padding: 0 12px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 500;
-      border-radius: 6px;
-      border: 1px solid #cbd5e1;
-      background: #f8fafc;
-      color: var(--text-2);
-      cursor: pointer;
-      white-space: nowrap;
-      transition: all .15s;
-    }
-    .btn-map-picker:hover {
-      background: #eff6ff;
-      color: #2563eb;
-      border-color: #93c5fd;
-    }
-    .battery-quick-report-group {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .battery-btn-blue {
-      height: 34px;
-      padding: 0 18px;
-      font-size: 13px;
-      font-weight: 500;
-      border-radius: 6px;
-      border: none;
-      background: #2563eb;
-      color: #ffffff;
-      cursor: pointer;
-      box-shadow: 0 2px 6px rgba(37, 99, 235, .25);
-      transition: all .15s;
-    }
-    .battery-btn-blue:hover {
-      background: #1d4ed8;
-      box-shadow: 0 3px 10px rgba(37, 99, 235, .35);
-      transform: translateY(-1px);
-    }
-    .battery-btn-blue:active {
-      transform: translateY(0);
-    }
-    .battery-bottom-layout {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      min-height: 0;
-      flex: 1;
-    }
-    .battery-fleet-panel, .battery-ops-panel {
-      padding: 14px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .battery-device-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      overflow-y: auto;
-      max-height: 220px;
-    }
-    .battery-device-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 12px;
-      border-radius: 8px;
-      border: 1px solid var(--line);
-      background: #ffffff;
-      cursor: pointer;
-      transition: all .12s;
-    }
-    .battery-device-item:hover {
-      border-color: #93c5fd;
-      background: #f8faff;
-    }
-    .battery-device-item.active {
-      border-color: #2563eb;
-      background: #eff6ff;
-      box-shadow: 0 0 0 1px #2563eb;
-    }
-    .battery-item-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .battery-item-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-    .battery-item-no {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text);
-    }
-    .battery-item-endpoint {
-      font-size: 11px;
-      color: #64748b;
-    }
-    .battery-item-actions {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .btn-connect, .btn-disconnect {
-      height: 26px;
-      padding: 0 10px;
-      font-size: 11.5px;
-      border-radius: 5px;
-      border: none;
-      cursor: pointer;
-      font-weight: 500;
-      transition: all .12s;
-    }
-    .btn-connect {
-      background: #2563eb;
-      color: #ffffff;
-    }
-    .btn-connect:hover {
-      background: #1d4ed8;
-    }
-    .btn-disconnect {
-      background: #fee2e2;
-      color: #dc2626;
-      border: 1px solid #fca5a5;
-    }
-    .btn-disconnect:hover {
-      background: #fecaca;
-    }
-    .btn-delete {
-      width: 26px;
-      height: 26px;
-      padding: 0;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 5px;
-      border: 1px solid transparent;
-      background: transparent;
-      color: #94a3b8;
-      cursor: pointer;
-      transition: all .12s;
-    }
-    .btn-delete:hover {
-      color: #ef4444;
-      background: #fee2e2;
-    }
-    .battery-ops-bar {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .btn-outline {
-      height: 30px;
-      padding: 0 12px;
-      font-size: 12px;
-      font-weight: 500;
-      border-radius: 6px;
-      border: 1px solid var(--line);
-      background: #ffffff;
-      color: var(--text-2);
-      cursor: pointer;
-      transition: all .12s;
-    }
-    .btn-outline:hover {
-      background: #eff6ff;
-      border-color: #93c5fd;
-      color: #2563eb;
-    }
-    .battery-tips-box {
-      margin-top: auto;
-      padding: 10px 12px;
-      border-radius: 8px;
-      background: #f8fafc;
-      border: 1px solid var(--line);
-      font-size: 11.5px;
-      line-height: 1.6;
-      color: #64748b;
-    }
-    .tips-title {
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 4px;
     }
   </style>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -2076,8 +1954,8 @@
         window._activeMapInstance = null;
       }
 
-      let lng = 108.367035;
-      let lat = 22.756302;
+      let lng = 108.38;
+      let lat = 22.77;
       let zoom = 14;
       let hasCustomCoord = false;
 
@@ -2090,7 +1968,7 @@
           lat = pLat;
           zoom = 16;
           // 如果不是默认占位坐标，则保留已有坐标
-          if (initialCoordStr.trim() !== "116.29721053978871,40.05213174125153" && initialCoordStr.trim() !== "113.324520,23.109980" && initialCoordStr.trim() !== "108.367035,22.756302") {
+          if (initialCoordStr.trim() !== "116.29721053978871,40.05213174125153" && initialCoordStr.trim() !== "113.324520,23.109980" && initialCoordStr.trim() !== "108.38,22.77") {
             hasCustomCoord = true;
           }
         }

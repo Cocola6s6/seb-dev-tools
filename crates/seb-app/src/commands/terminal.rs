@@ -131,7 +131,7 @@ pub fn open_external_url(url: String) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
-fn encode_ps_command(script: &str) -> String {
+pub fn encode_ps_command(script: &str) -> String {
     let utf16_bytes: Vec<u8> = script
         .encode_utf16()
         .flat_map(|u| u.to_le_bytes())

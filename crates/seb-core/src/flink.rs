@@ -63,16 +63,17 @@ struct FlinkTasksEntry {
     total: u32,
 }
 
-async fn fetch_http_json(path: &str) -> Result<String, String> {
+async fn fetch_http_json((host, port): (&str, u16), path: &str) -> Result<String, String> {
     let mut stream = tokio::time::timeout(
         Duration::from_secs(3),
-        TcpStream::connect((FLINK_HOST, FLINK_PORT)),
+        TcpStream::connect((host, port)),
     )
     .await
     .map_err(|_| "连接 Flink 服务器超时".to_string())?
     .map_err(|e| format!("连接 Flink 失败: {e}"))?;
 
-    let req = format!("GET {path} HTTP/1.1\r\nHost: {FLINK_HOST}\r\nConnection: close\r\n\r\n");
+    let host_header = if port == 80 { host.to_string() } else { format!("{host}:{port}") };
+    let req = format!("GET {path} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\n\r\n");
     stream
         .write_all(req.as_bytes())
         .await
@@ -92,7 +93,7 @@ async fn fetch_http_json(path: &str) -> Result<String, String> {
     }
 }
 
-pub async fn query_job(name: &str, base_path: &str, dashboard_url: &str, desc: &str) -> FlinkJobStatus {
+pub async fn query_job(node: (&str, u16), name: &str, base_path: &str, dashboard_url: &str, desc: &str) -> FlinkJobStatus {
     let mut status = FlinkJobStatus {
         name: name.to_string(),
         running: false,
@@ -110,8 +111,8 @@ pub async fn query_job(name: &str, base_path: &str, dashboard_url: &str, desc: &
     let jobs_path = format!("{base_path}/jobs/overview");
 
     let (overview_res, jobs_res) = tokio::join!(
-        fetch_http_json(&overview_path),
-        fetch_http_json(&jobs_path),
+        fetch_http_json(node, &overview_path),
+        fetch_http_json(node, &jobs_path),
     );
 
     if let Ok(body) = overview_res {
@@ -140,19 +141,49 @@ pub async fn query_job(name: &str, base_path: &str, dashboard_url: &str, desc: &
     status
 }
 
+/// 看板 URL 形如 http://host/flink-operator/<作业名>/#/overview，
+/// 作业名和 REST 路径都从里面取，换环境只改 URL 就够
+fn job_from_url(url: &str, fallback: &str) -> (String, String) {
+    let name = url
+        .split("/flink-operator/")
+        .nth(1)
+        .and_then(|rest| rest.split('/').next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.starts_with('#'))
+        .unwrap_or(fallback);
+    (name.to_string(), format!("/flink-operator/{name}"))
+}
+
 pub async fn check_flink_state() -> FlinkState {
+    let cfg = crate::config::load();
+    let high_url = if cfg.settings.control.flink_high_url.trim().is_empty() {
+        FLINK_HIGH_URL.to_string()
+    } else {
+        cfg.settings.control.flink_high_url.trim().to_string()
+    };
+    let iot_url = if cfg.settings.control.flink_iot_url.trim().is_empty() {
+        FLINK_IOT_URL.to_string()
+    } else {
+        cfg.settings.control.flink_iot_url.trim().to_string()
+    };
+
+    let (high_name, high_path) = job_from_url(&high_url, "seb-flink-bike-iot-high");
+    let (iot_name, iot_path) = job_from_url(&iot_url, "seb-flink-bike-iot");
+
     let (high, iot) = tokio::join!(
         query_job(
-            "seb-flink-bike-iot-high",
-            "/flink-operator/seb-flink-bike-iot-high",
-            FLINK_HIGH_URL,
-            "处理设备上下线、登录鉴权、心跳与高优先级控制/告警流",
+            (FLINK_HOST, FLINK_PORT),
+            &high_name,
+            &high_path,
+            &high_url,
+            "在线/心跳流计算",
         ),
         query_job(
-            "seb-flink-bike-iot",
-            "/flink-operator/seb-flink-bike-iot",
-            FLINK_IOT_URL,
-            "处理 GPS 经纬度轨迹、偏向角、速度上报与 BMS 电池遥测流",
+            (FLINK_HOST, FLINK_PORT),
+            &iot_name,
+            &iot_path,
+            &iot_url,
+            "定位/遥测流计算",
         ),
     );
 

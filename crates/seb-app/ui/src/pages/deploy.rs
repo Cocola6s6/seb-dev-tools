@@ -232,7 +232,6 @@ pub fn DeployPage() -> View {
             match api::bike_lookup(&bike_no).await {
                 Ok(None) => ctx.log_warn(format!("seb_goods_db.bike_tb 中未找到车辆 {bike_no}")),
                 Ok(Some(d)) => {
-                    // 1. 自动返显表单输入框
                     if !d.ecu_no.is_empty() {
                         ctx.device_no.set(d.ecu_no.clone());
                     }
@@ -272,7 +271,6 @@ pub fn DeployPage() -> View {
                     has_helmet.set(d.has_helmet);
                     has_trunk.set(d.has_trunk);
 
-                    // 2. 保存至本地配置以便跨页面同步
                     let mut cfg = ctx.current_config();
                     cfg.device_no = d.ecu_no.clone();
                     cfg.battery_no = d.battery_no.clone();
@@ -287,7 +285,6 @@ pub fn DeployPage() -> View {
                     let _ = api::save_config(&cfg).await;
                     ctx.cfg.set(cfg);
 
-                    // 3. 日志打印详细结果
                     let bat_str = if d.battery_no.is_empty() {
                         "未绑定".to_string()
                     } else {
@@ -316,7 +313,7 @@ pub fn DeployPage() -> View {
             div(class="section") {
                 div(class="section-title") {
                     "基础信息"
-                    span(class="tag") { "必填" }
+                    span(class="tag tag-required") { "必选" }
                 }
                 div(class="grid grid-4") {
                     div(class="field") {

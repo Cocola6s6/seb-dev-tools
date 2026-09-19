@@ -62,14 +62,13 @@ impl Publisher {
             return Ok(self.chan.as_ref().expect("已校验存在"));
         }
 
-        self.disconnect().await;
-
-        let args = OpenConnectionArguments::new(
+        let mut args = OpenConnectionArguments::new(
             crate::config::MQ_HOST,
             crate::config::MQ_PORT,
             crate::config::MQ_USERNAME,
             crate::config::MQ_PASSWORD,
         );
+        args.virtual_host("/");
         let conn = Connection::open(&args)
             .await
             .map_err(|e| MqError::Connect(e.to_string()))?;

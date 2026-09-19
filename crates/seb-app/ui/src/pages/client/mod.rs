@@ -1,17 +1,28 @@
+mod devices;
+
 use crate::actions::run_client_named;
 use crate::api;
-use crate::components::{render_qr_svg, select_value, Check, Field, MapPickerModal};
-use crate::state::{host_env_tag, AlarmType, AppCtx, ClientCtx, DeviceState, LogLevel, Page};
+use crate::components::{
+    select_value, Check, Field, MapPickerModal,
+};
+use crate::state::{AlarmType, AppCtx, LogLevel};
 use gloo_timers::future::TimeoutFuture;
 use std::cell::Cell;
 use std::rc::Rc;
 use sycamore::prelude::*;
-use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 
 const GW_INNER: &str = "bike-seb-inner-test.costrip.cn:32405";
 const GW_TEST: &str = "bike-seb-test.costrip.cn:8514";
 const GW_PROD: &str = "bike-seb.costrip.cn:8514";
+
+fn gw_or(configured: String, fallback: &str) -> String {
+    if configured.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        configured.trim().to_string()
+    }
+}
 
 const VEHICLE_STATES: &[(&str, &str)] = &[
     ("0", "借车"),
@@ -20,59 +31,6 @@ const VEHICLE_STATES: &[(&str, &str)] = &[
     ("3", "运输模式"),
 ];
 
-fn connect_single_device(ctx: AppCtx, no: String) {
-    ctx.log_client(format!("正在连接设备 {no}..."), LogLevel::Info);
-    spawn_local(async move {
-        match api::client_connect(&no).await {
-            Ok(st) => {
-                ctx.log_client(format!("{no} 已连接 {}", st.endpoint), LogLevel::Info);
-                // 登录后网关才会写 ecu:instance:id，实例号变了不刷新的话指令会投到旧实例
-                TimeoutFuture::new(1000).await;
-                if ctx.device_no.get_clone().trim() == no {
-                    ctx.refresh_instance(false);
-                }
-            }
-            Err(e) => ctx.log_client(format!("【错误】{no}: {e}"), LogLevel::Error),
-        }
-    });
-}
-
-fn trigger_device_connect(c: ClientCtx, ctx: AppCtx, no: String) {
-    c.load_device(&no);
-    if c.split_gateway().1 == 0 {
-        ctx.log_client("【警告】网关端口不合法", LogLevel::Warn);
-        return;
-    }
-    connect_single_device(ctx, no);
-}
-
-fn toggle_device_connect(c: ClientCtx, ctx: AppCtx, no: String) {
-    let is_connected = c
-        .devices
-        .get_clone()
-        .into_iter()
-        .find(|d| d.config.device_no == no)
-        .map(|d| d.connected)
-        .unwrap_or(false);
-
-    if is_connected {
-        run_client_named(ctx, "断开连接", async move {
-            api::client_disconnect(&no).await.map(|_| ())
-        });
-    } else {
-        trigger_device_connect(c, ctx, no);
-    }
-}
-
-fn selected_no(c: ClientCtx, ctx: AppCtx) -> Option<String> {
-    let no = c.selected.get_clone();
-    if no.is_empty() {
-        ctx.log_client("【警告】请先在左侧选择一台设备", LogLevel::Warn);
-        return None;
-    }
-    Some(no)
-}
-
 #[derive(Clone, PartialEq)]
 struct BatteryDropdownItem {
     battery_no: String,
@@ -80,10 +38,15 @@ struct BatteryDropdownItem {
     is_current_bound: bool,
 }
 
+use devices::{connect_single_device, selected_no, trigger_device_connect, ClientQrPanel, DeviceList};
+
 #[component]
 pub fn ClientPage() -> View {
     let ctx = use_context::<AppCtx>();
     let c = ctx.client;
+    let gw_inner = create_memo(move || gw_or(ctx.global_settings.get_clone().client.default_inner_gw, GW_INNER));
+    let gw_test = create_memo(move || gw_or(ctx.global_settings.get_clone().client.default_test_gw, GW_TEST));
+    let gw_prod = create_memo(move || gw_or(ctx.global_settings.get_clone().client.default_prod_gw, GW_PROD));
     let map_picker_open = create_signal(false);
     let battery_dropdown_open = create_signal(false);
 
@@ -118,6 +81,46 @@ pub fn ClientPage() -> View {
                     c.battery_options.set(list);
                 }
             });
+        }
+    });
+
+    // 车架号是异步反查来的，电池清单也是异步拉的，凑齐了才能定这台设备该用哪颗电池。
+    // 当前值读 untrack，否则自己写完又把自己触发一遍
+    create_effect(move || {
+        let no = c.selected.get_clone();
+        let owner = c.owner.get_clone();
+        let map = c.bike_map.get_clone();
+        let options = c.battery_options.get_clone();
+        // owner 对不上说明表单还在切设备，这一轮写进去会落到上一台头上
+        if no.is_empty() || owner != no || options.is_empty() {
+            return;
+        }
+        let bike_no = map.get(&no).cloned().unwrap_or_default().trim().to_string();
+        if bike_no.is_empty() {
+            return;
+        }
+        let cur = untrack(move || c.battery_no.get_clone()).trim().to_string();
+
+        let bound = options
+            .iter()
+            .find(|b| b.bound_bike_no.as_deref().map(str::trim) == Some(bike_no.as_str()));
+        if let Some(b) = bound {
+            if cur != b.battery_no {
+                c.battery_no.set(b.battery_no.clone());
+            }
+            return;
+        }
+
+        let cur_is_free = !cur.is_empty()
+            && options
+                .iter()
+                .any(|b| b.battery_no == cur && b.bound_bike_no.is_none());
+        if cur_is_free {
+            return;
+        }
+        match options.iter().find(|b| b.bound_bike_no.is_none()) {
+            Some(free) => c.battery_no.set(free.battery_no.clone()),
+            None => ctx.log_client(format!("【警告】{no} 没有可用的空闲电池"), LogLevel::Warn),
         }
     });
 
@@ -228,9 +231,9 @@ pub fn ClientPage() -> View {
     let bms_btn_text = create_memo(move || {
         let list = c.selected_list();
         if list.len() > 1 {
-            format!("批量上报 BMS ({})", list.len())
+            format!("批量上报电池 ({})", list.len())
         } else {
-            "上报 BMS".to_string()
+            "上报电池".to_string()
         }
     });
 
@@ -326,9 +329,9 @@ pub fn ClientPage() -> View {
         }
         if targets.len() == 1 {
             let no = targets[0].clone();
-            run_client_named(ctx, "上报 BMS", api::client_send_bms(no));
+            run_client_named(ctx, "上报电池", api::client_send_bms(no));
         } else {
-            run_client_named(ctx, "批量上报 BMS", async move {
+            run_client_named(ctx, "批量上报电池", async move {
                 let mut err_cnt = 0;
                 let mut ok_cnt = 0;
                 for no in targets {
@@ -441,36 +444,32 @@ pub fn ClientPage() -> View {
                                         div(class="gateway-env-shortcuts") {
                                             button(
                                                 r#type="button",
-                                                class=move || if c.gateway.get_clone().trim() == GW_INNER { "env-chip inner active" } else { "env-chip inner" },
+                                                class=move || if c.gateway.get_clone().trim() == gw_inner.get_clone() { "env-chip inner active" } else { "env-chip inner" },
                                                 title="快捷填入内网网关",
-                                                on:click=move |_| c.gateway.set(GW_INNER.to_string())
+                                                on:click=move |_| c.gateway.set(gw_inner.get_clone())
                                             ) { "内网" }
                                             button(
                                                 r#type="button",
-                                                class=move || if c.gateway.get_clone().trim() == GW_TEST { "env-chip test active" } else { "env-chip test" },
+                                                class=move || if c.gateway.get_clone().trim() == gw_test.get_clone() { "env-chip test active" } else { "env-chip test" },
                                                 title="快捷填入外网网关",
-                                                on:click=move |_| c.gateway.set(GW_TEST.to_string())
+                                                on:click=move |_| c.gateway.set(gw_test.get_clone())
                                             ) { "外网" }
                                             button(
                                                 r#type="button",
-                                                class=move || if c.gateway.get_clone().trim() == GW_PROD { "env-chip prod active" } else { "env-chip prod" },
+                                                class=move || if c.gateway.get_clone().trim() == gw_prod.get_clone() { "env-chip prod active" } else { "env-chip prod" },
                                                 title="快捷填入正式网关",
-                                                on:click=move |_| c.gateway.set(GW_PROD.to_string())
+                                                on:click=move |_| c.gateway.set(gw_prod.get_clone())
                                             ) { "正式" }
                                         }
                                     }
                                     input(r#type="text", placeholder="域名:端口", bind:value=c.gateway)
-                                }
-                                div(class="field") {
-                                    label { "软件版本号" }
-                                    input(r#type="text", bind:value=c.soft_version)
                                 }
                             }
                             div(class="card-actions") {
                                 button(class="primary", on:click=connect) { (conn_btn_text.get_clone()) }
                                 button(on:click=disconnect) { (disconn_btn_text.get_clone()) }
                                 span(class="spacer") {}
-                                Check(label="60 秒心跳", checked=c.heartbeat)
+                                Check(label="自动心跳", checked=c.heartbeat)
                             }
                         }
 
@@ -482,11 +481,11 @@ pub fn ClientPage() -> View {
                                     div(class="field-inline") {
                                         input(
                                             r#type="text",
-                                            placeholder="如 108.367035,22.756302",
+                                            placeholder="如 108.38,22.77",
                                             bind:value=c.coordinates,
                                             on:keydown=move |ev: web_sys::KeyboardEvent| {
                                                 if ev.key() == "Tab" && !ev.shift_key() && c.coordinates.get_clone().trim().is_empty() {
-                                                    c.coordinates.set("108.367035,22.756302".to_string());
+                                                    c.coordinates.set("108.38,22.77".to_string());
                                                 }
                                             }
                                         )
@@ -661,433 +660,6 @@ pub fn ClientPage() -> View {
                 }
 
                 MapPickerModal(open=map_picker_open, target_coord=c.coordinates)
-            }
-        }
-    }
-}
-
-#[derive(Clone, PartialEq)]
-struct QrBikeItem {
-    device_no: String,
-    bike_no: String,
-    host: String,
-    connected: bool,
-}
-
-#[component]
-fn ClientQrPanel() -> View {
-    let ctx = use_context::<AppCtx>();
-    let c = ctx.client;
-
-    let known_ecus = Rc::new(std::cell::RefCell::new(std::collections::HashSet::<String>::new()));
-    create_effect(move || {
-        let devs = c.devices.get_clone();
-        let ecu_nos: Vec<String> = devs
-            .into_iter()
-            .map(|d| d.config.device_no.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if ecu_nos.is_empty() {
-            c.bike_map.set(std::collections::HashMap::new());
-            known_ecus.borrow_mut().clear();
-            return;
-        }
-        let missing: Vec<String> = {
-            let mut known = known_ecus.borrow_mut();
-            let missing: Vec<String> = ecu_nos.iter().filter(|no| !known.contains(*no)).cloned().collect();
-            for no in &missing {
-                known.insert(no.clone());
-            }
-            missing
-        };
-        if missing.is_empty() {
-            return;
-        }
-        spawn_local(async move {
-            if let Ok(new_map) = api::client_get_bike_nos(missing).await {
-                if !new_map.is_empty() {
-                    let mut cur = c.bike_map.get_clone();
-                    cur.extend(new_map);
-                    c.bike_map.set(cur);
-                }
-            }
-        });
-    });
-
-    let valid_items = create_memo(move || {
-        let devs = c.devices.get_clone();
-        let map = c.bike_map.get_clone();
-        devs.into_iter()
-            .filter_map(|d| {
-                let ecu = d.config.device_no;
-                let bike_no = map.get(&ecu)?.clone();
-                if bike_no.trim().is_empty() {
-                    return None;
-                }
-                Some(QrBikeItem {
-                    device_no: ecu,
-                    bike_no,
-                    host: d.config.host,
-                    connected: d.connected,
-                })
-            })
-            .collect::<Vec<_>>()
-    });
-
-    view! {
-        div(class="client-qr-panel") {
-            div(class="client-qr-grid") {
-                Indexed(
-                    list=valid_items,
-                    view=move |item: QrBikeItem| {
-                        let ecu_no = item.device_no.clone();
-                        let bike_no = item.bike_no.clone();
-                        let host = item.host.clone();
-                        let connected = item.connected;
-                        let (env_label, env_class) = host_env_tag(&host);
-                        let is_selected = {
-                            let ecu_no = ecu_no.clone();
-                            move || c.is_selected(&ecu_no)
-                        };
-                        let cls = {
-                            let is_selected = is_selected.clone();
-                            move || {
-                                let mut res = String::from("client-qr-card");
-                                if connected {
-                                    res.push_str(" online");
-                                } else {
-                                    res.push_str(" offline");
-                                }
-                                if is_selected() {
-                                    res.push_str(" active");
-                                }
-                                res
-                            }
-                        };
-                        let qr_url = format!("https://gycx.cn?s={bike_no}");
-                        let qr_data_url = {
-                            let svg = render_qr_svg(&qr_url).unwrap_or_default();
-                            format!("data:image/svg+xml;utf8,{}", js_sys::encode_uri_component(&svg))
-                        };
-                        let copied = create_signal(false);
-                        let copy_link = {
-                            let url = qr_url.clone();
-                            let bike_no = bike_no.clone();
-                            move |ev: web_sys::MouseEvent| {
-                                ev.stop_propagation();
-                                let url = url.clone();
-                                let bike_no = bike_no.clone();
-                                spawn_local(async move {
-                                    let _ = api::copy_to_clipboard(&url).await;
-                                    copied.set(true);
-                                    ctx.toast(format!("已复制车辆 {bike_no} 二维码链接"));
-                                    TimeoutFuture::new(1500).await;
-                                    copied.set(false);
-                                });
-                            }
-                        };
-                        let select_dev = {
-                            let ecu_no = ecu_no.clone();
-                            move |ev: web_sys::MouseEvent| {
-                                if ev.meta_key() || ev.ctrl_key() {
-                                    c.toggle_select(&ecu_no);
-                                } else if ev.shift_key() {
-                                    c.range_select(&ecu_no);
-                                } else {
-                                    c.select(&ecu_no);
-                                }
-                            }
-                        };
-                        let dblclick_qr = {
-                            let ecu_no = ecu_no.clone();
-                            move |_| {
-                                toggle_device_connect(c, ctx, ecu_no.clone());
-                            }
-                        };
-                        view! {
-                            div(
-                                class=cls,
-                                title=if connected { "单击选中，双击断开连接 (按住 Cmd/Shift 可多选)" } else { "单击选中，双击连接并登录 (按住 Cmd/Shift 可多选)" },
-                                on:click=select_dev,
-                                on:dblclick=dblclick_qr
-                            ) {
-                                span(class=format!("qr-env-badge {env_class}")) { (env_label) }
-                                div(class="qr-svg-container") {
-                                    img(src=qr_data_url, alt="二维码", style="width:100%;height:100%;display:block;")
-                                }
-                                div(class="nav-qr-foot") {
-                                    span(class="qr-bike-no") { (bike_no) }
-                                    button(
-                                        class=move || if copied.get() { "qr-copy-btn copied" } else { "qr-copy-btn" },
-                                        title=move || if copied.get() { "已复制" } else { "复制链接" },
-                                        on:click=copy_link
-                                    ) {
-                                        (if copied.get() {
-                                            view! {
-                                                svg(viewBox="0 0 24 24", width="12", height="12", fill="currentColor") {
-                                                    path(d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z") {}
-                                                }
-                                            }
-                                        } else {
-                                            view! {
-                                                svg(viewBox="0 0 24 24", width="12", height="12", fill="currentColor") {
-                                                    path(d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z") {}
-                                                }
-                                            }
-                                        })
-                                    }
-                                }
-                            }
-                        }
-                    }
-                )
-            }
-        }
-    }
-}
-
-#[component]
-fn DeviceList() -> View {
-    let ctx = use_context::<AppCtx>();
-    let c = ctx.client;
-    let adding = create_signal(false);
-    let new_no = create_signal(String::new());
-
-    let confirm_add = move || {
-        let no = new_no.get_clone().trim().to_string();
-        adding.set(false);
-        new_no.set(String::new());
-        if no.is_empty() {
-            return;
-        }
-        if c.devices.get_clone().iter().any(|d| d.config.device_no == no) {
-            c.select(&no);
-            return;
-        }
-        // 新设备沿用当前表单的网关与姿态，省得每台重填
-        let config = c.config(no.clone());
-        spawn_local(async move {
-            match api::client_update_device(config).await {
-                Ok(list) => {
-                    c.devices.set(list);
-                    c.select(&no);
-                }
-                Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
-            }
-        });
-    };
-
-    let head_text = create_memo(move || {
-        let total = c.devices.get_clone().len();
-        let selected_cnt = c.selected_list().len();
-        if selected_cnt > 1 {
-            format!("设备 (已选 {}/{})", selected_cnt, total)
-        } else {
-            format!("设备 ({})", total)
-        }
-    });
-
-    let copied = create_signal(false);
-    let copy_selected = {
-        let c = c.clone();
-        let ctx = ctx.clone();
-        let copied = copied.clone();
-        move || {
-            let list = c.selected_list();
-            let text = if list.is_empty() {
-                let sel = c.selected.get_clone();
-                if sel.trim().is_empty() {
-                    return;
-                }
-                sel
-            } else {
-                list.join("\n")
-            };
-            let count = if list.is_empty() { 1 } else { list.len() };
-            let copied = copied.clone();
-            spawn_local(async move {
-                let _ = api::copy_to_clipboard(&text).await;
-                copied.set(true);
-                if count == 1 {
-                    ctx.toast(format!("已复制设备序列号：{text}"));
-                } else {
-                    ctx.toast(format!("已复制 {count} 设备序列号到剪贴板"));
-                }
-                TimeoutFuture::new(1000).await;
-                copied.set(false);
-            });
-        }
-    };
-
-    let on_list_keydown = {
-        let copy_selected = copy_selected.clone();
-        move |ev: web_sys::KeyboardEvent| {
-            if (ev.meta_key() || ev.ctrl_key()) && (ev.key() == "c" || ev.key() == "C") {
-                ev.prevent_default();
-                copy_selected();
-            }
-        }
-    };
-
-    // 全局快捷键监听：选中设备后按 Cmd+C/Ctrl+C 快速复制
-    {
-        let copy_selected = copy_selected.clone();
-        let cb = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::KeyboardEvent)>::wrap(Box::new(move |ev: web_sys::KeyboardEvent| {
-            if (ev.meta_key() || ev.ctrl_key()) && (ev.key() == "c" || ev.key() == "C") {
-                if let Some(target) = ev.target() {
-                    if let Ok(el) = target.dyn_into::<web_sys::Element>() {
-                        let tag = el.tag_name().to_lowercase();
-                        if tag == "input" || tag == "textarea" {
-                            return;
-                        }
-                    }
-                }
-                if ctx.page.get() == Page::Client {
-                    ev.prevent_default();
-                    copy_selected();
-                }
-            }
-        }));
-        if let Some(w) = web_sys::window() {
-            let _ = w.add_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref());
-            cb.forget();
-        }
-    }
-
-    view! {
-        div(class="device-list", tabindex="0", on:keydown=on_list_keydown) {
-            div(class="device-list-head") {
-                span { (head_text.get_clone()) }
-                button(class="icon-btn ok", title="新增设备", on:click=move |_| {
-                    adding.set(true);
-                    new_no.set(String::new());
-                }) {
-                    svg(viewBox="0 0 24 24", width="15", height="15", fill="none", stroke="currentColor", stroke-width="2.4", stroke-linecap="round", stroke-linejoin="round") {
-                        line(x1="12", y1="5", x2="12", y2="19") {}
-                        line(x1="5", y1="12", x2="19", y2="12") {}
-                    }
-                }
-            }
-
-            (move || if adding.get() {
-                view! {
-                    div(class="device-add") {
-                        input(
-                            r#type="text",
-                            placeholder="设备序列号，回车确认",
-                            bind:value=new_no,
-                            on:blur=move |_| confirm_add(),
-                            on:keydown=move |ev: web_sys::KeyboardEvent| {
-                                match ev.key().as_str() {
-                                    "Enter" => confirm_add(),
-                                    "Escape" => { adding.set(false); new_no.set(String::new()); }
-                                    _ => {}
-                                }
-                            }
-                        )
-                    }
-                }
-            } else {
-                view! {}
-            })
-
-            div(class="device-items") {
-                Indexed(
-                    list=c.devices,
-                    view=move |st: DeviceState| {
-                        let no = st.config.device_no.clone();
-                        let host = st.config.host.clone();
-                        let connected = st.connected;
-                        let coords = st.config.profile.coordinates.clone();
-                        let (env_label, env_class) = host_env_tag(&host);
-                        let pick = {
-                            let no = no.clone();
-                            move |ev: web_sys::MouseEvent| {
-                                if ev.meta_key() || ev.ctrl_key() {
-                                    c.toggle_select(&no);
-                                } else if ev.shift_key() {
-                                    c.range_select(&no);
-                                } else {
-                                    c.select(&no);
-                                }
-                            }
-                        };
-                        let dblpick = {
-                            let no = no.clone();
-                            move |_| {
-                                toggle_device_connect(c, ctx, no.clone());
-                            }
-                        };
-                        let remove = {
-                            let no = no.clone();
-                            move |ev: web_sys::MouseEvent| {
-                                ev.stop_propagation();
-                                let no = no.clone();
-                                spawn_local(async move {
-                                    match api::client_remove_device(&no).await {
-                                        Ok(list) => {
-                                            let next = list.first().map(|d| d.config.device_no.clone());
-                                            c.devices.set(list);
-                                            if c.selected.get_clone() == no {
-                                                c.select(next.as_deref().unwrap_or(""));
-                                            }
-                                        }
-                                        Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
-                                    }
-                                });
-                            }
-                        };
-                        let is_selected = {
-                            let no = no.clone();
-                            move || c.is_selected(&no)
-                        };
-                        let cls = {
-                            let is_selected = is_selected.clone();
-                            let copied = copied.clone();
-                            move || {
-                                if is_selected() {
-                                    if copied.get() {
-                                        "device-item active copied-flash"
-                                    } else {
-                                        "device-item active"
-                                    }
-                                } else {
-                                    "device-item"
-                                }
-                            }
-                        };
-                        let sub = if connected {
-                            if coords.is_empty() {
-                                format!("{env_label} · 无坐标")
-                            } else {
-                                format!("{env_label} · {coords}")
-                            }
-                        } else {
-                            format!("{env_label} · 未连接")
-                        };
-                        view! {
-                            div(
-                                class=cls,
-                                title=if connected { "单击切换当前配置，双击断开连接 (按住 Cmd/Shift 可多选)" } else { "单击切换当前配置，双击连接并登录 (按住 Cmd/Shift 可多选)" },
-                                on:click=pick,
-                                on:dblclick=dblpick
-                            ) {
-                                div(class="device-item-top") {
-                                    span(class=if connected { "dot on" } else { "dot off" }) {}
-                                    span(class="device-no") { (no) }
-                                    span(class=format!("device-env-tag {env_class}")) { (env_label) }
-                                    button(class="device-del", title="移除", on:click=remove) {
-                                        svg(viewBox="0 0 24 24", width="12", height="12", fill="none", stroke="currentColor", stroke-width="2.4", stroke-linecap="round", stroke-linejoin="round") {
-                                            line(x1="18", y1="6", x2="6", y2="18") {}
-                                            line(x1="6", y1="6", x2="18", y2="18") {}
-                                        }
-                                    }
-                                }
-                                div(class="device-sub") { (sub) }
-                            }
-                        }
-                    }
-                )
             }
         }
     }

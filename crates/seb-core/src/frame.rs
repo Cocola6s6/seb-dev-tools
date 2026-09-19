@@ -1,6 +1,8 @@
 //! 帧结构：`AA AA | len(2) | 00 | cmd(1) | 01 00 00 03 | body | crc16-x25(2)`
 //! len = body 长度 + 12；CRC 覆盖去掉帧头 AAAA 之后到 body 末尾。
 
+use crate::config::ClientPayloadSettings;
+
 pub mod cmd {
     pub const LOGIN: u8 = 0x01;
     pub const LOCATION: u8 = 0x02;
@@ -132,9 +134,9 @@ pub fn login(device_no: &str, soft_version: &str, unix_time: u32) -> Vec<u8> {
     wrap(cmd::LOGIN, &body)
 }
 
-pub fn ping(device_no: &str, soc: u8, voltage_v: f32) -> Vec<u8> {
-    // 信号/车辆状态位用与 Python 模拟器相同的固定组合，够维持在线即可
-    let signal: u16 =(2 & 0x03) | ((9 & 0x0F) << 2) | ((9 & 0x0F) << 6) | ((9 & 0x0F) << 10);
+pub fn ping(device_no: &str, soc: u8, p: &ClientPayloadSettings) -> Vec<u8> {
+    let signal = signal_status(p.gps_status, p.satellites, p.backup_battery, p.gsm_signal);
+    // 车辆状态位用与 Python 模拟器相同的固定组合，够维持在线即可
     let vehicle: u16 = 1
         | (1 << 1)
         | (1 << 2)
@@ -153,7 +155,7 @@ pub fn ping(device_no: &str, soc: u8, voltage_v: f32) -> Vec<u8> {
     body.extend_from_slice(&bcd_encode(device_no, 9));
     body.extend_from_slice(&signal.to_be_bytes());
     body.extend_from_slice(&vehicle.to_be_bytes());
-    body.extend_from_slice(&((voltage_v * 1000.0) as u16).to_be_bytes());
+    body.extend_from_slice(&(p.voltage.saturating_mul(100)).to_be_bytes()); // 0.1V -> mV
     body.push(soc);
     body.extend_from_slice(&0u16.to_be_bytes()); // 可用剩余容量
     wrap(cmd::PING, &body)
@@ -256,29 +258,37 @@ fn smart_helmet(helmet_lock_unlocked: bool, helmet_present: bool) -> Vec<u8> {
     v
 }
 
-pub fn location(device_no: &str, o: &LocationOpts, unix_time: u32) -> Vec<u8> {
+pub fn location(
+    device_no: &str,
+    o: &LocationOpts,
+    unix_time: u32,
+    p: &ClientPayloadSettings,
+) -> Vec<u8> {
     let (lng, lat) = gcj02_to_wgs84(o.lng, o.lat);
     let mut body = Vec::with_capacity(96);
     body.extend_from_slice(&bcd_encode(device_no, 9));
     body.extend_from_slice(&unix_time.to_be_bytes());
     body.extend_from_slice(&coord_raw(lat).to_be_bytes());
     body.extend_from_slice(&coord_raw(lng).to_be_bytes());
-    body.extend_from_slice(&90u16.to_be_bytes()); // 海拔
-    body.push(25); // 方向
-    body.push(20); // GPS 速度
-    body.extend_from_slice(&signal_status(2, 9, 9, 9).to_be_bytes());
-    for _ in 0..4 {
-        body.extend_from_slice(&u16::MAX.to_be_bytes()); // mcc / mnc / lac / cellId
-    }
+    body.extend_from_slice(&p.altitude.to_be_bytes());
+    body.push(p.heading);
+    body.push(p.gps_speed);
+    body.extend_from_slice(
+        &signal_status(p.gps_status, p.satellites, p.backup_battery, p.gsm_signal).to_be_bytes(),
+    );
+    body.extend_from_slice(&p.mcc.to_be_bytes());
+    body.extend_from_slice(&p.mnc.to_be_bytes());
+    body.extend_from_slice(&p.lac.to_be_bytes());
+    body.extend_from_slice(&p.cell_id.to_be_bytes());
     body.push(o.soc);
-    body.extend_from_slice(&u16::MAX.to_be_bytes()); // 可用剩余容量
-    body.push(90); // SOH
-    body.extend_from_slice(&u16::MAX.to_be_bytes()); // 循环次数
-    body.push(255); // 本次循环电流
-    body.push(255); // 控制器温度
-    body.extend_from_slice(&100u16.to_be_bytes()); // 电压 0.1V
-    body.extend_from_slice(&10000u32.to_be_bytes()); // 总里程
-    body.extend_from_slice(&5000u32.to_be_bytes()); // 单次里程
+    body.extend_from_slice(&p.available_capacity.to_be_bytes());
+    body.push(p.soh);
+    body.extend_from_slice(&p.charge_cycles.to_be_bytes());
+    body.push(p.ride_current);
+    body.push(p.controller_temperature);
+    body.extend_from_slice(&p.voltage.to_be_bytes()); // 0.1V
+    body.extend_from_slice(&p.total_mileage.to_be_bytes());
+    body.extend_from_slice(&p.trip_mileage.to_be_bytes());
     body.extend_from_slice(&o.speed.to_be_bytes());
     body.extend_from_slice(&vehicle_status(o).to_be_bytes());
     body.push(1); // TLV 个数
@@ -289,28 +299,42 @@ pub fn location(device_no: &str, o: &LocationOpts, unix_time: u32) -> Vec<u8> {
     wrap(cmd::LOCATION, &body)
 }
 
-pub fn bms(device_no: &str, soc: u8, battery_no: &str, unix_time: u32) -> Vec<u8> {
+pub fn bms(
+    device_no: &str,
+    soc: u8,
+    battery_no: &str,
+    unix_time: u32,
+    p: &ClientPayloadSettings,
+) -> Vec<u8> {
+    let cells = parse_u16_list(&p.bms_cell_voltages);
     let mut body = Vec::with_capacity(96);
     body.extend_from_slice(&bcd_encode(device_no, 9));
     body.extend_from_slice(&unix_time.to_be_bytes());
     body.push(soc); // 相对 SOC
-    body.extend_from_slice(&4000u16.to_be_bytes()); // 可用剩余容量
+    body.extend_from_slice(&p.bms_remain_capacity.to_be_bytes());
     body.push(soc); // 绝对 SOC
-    body.extend_from_slice(&5000u16.to_be_bytes()); // 绝对容量
-    body.push(85); // SOH
-    body.extend_from_slice(&20u16.to_be_bytes()); // 内部温度
-    body.extend_from_slice(&90u16.to_be_bytes()); // 电流
-    body.extend_from_slice(&18500u16.to_be_bytes()); // 电压 mV
-    body.extend_from_slice(&40u16.to_be_bytes()); // 循环次数
-    for i in 0..14u16 {
-        body.extend_from_slice(&(4000 + i * 100).to_be_bytes()); // 单体电压
+    body.extend_from_slice(&p.bms_full_capacity.to_be_bytes());
+    body.push(p.bms_soh);
+    body.extend_from_slice(&p.bms_temperature.to_be_bytes());
+    body.extend_from_slice(&p.bms_current.to_be_bytes());
+    body.extend_from_slice(&p.bms_voltage.to_be_bytes()); // mV
+    body.extend_from_slice(&p.bms_cycle_count.to_be_bytes());
+    // 报文里没有节数字段，只能按固定 14 节铺满
+    for i in 0..14 {
+        body.extend_from_slice(&cells.get(i).copied().unwrap_or(0).to_be_bytes());
     }
-    body.extend_from_slice(&u16::MAX.to_be_bytes()); // 充电间隔
-    body.extend_from_slice(&u16::MAX.to_be_bytes()); // 最大充电间隔
+    body.extend_from_slice(&p.bms_charge_interval.to_be_bytes());
+    body.extend_from_slice(&p.bms_max_charge_interval.to_be_bytes());
     body.extend_from_slice(&fixed_ascii(battery_no, 16)); // 电池条码
-    body.extend_from_slice(&u16::MAX.to_be_bytes()); // BMS 版本
-    body.extend_from_slice(&fixed_ascii("1111111111111111", 16)); // 电池厂商
+    body.extend_from_slice(&p.bms_version.to_be_bytes());
+    body.extend_from_slice(&fixed_ascii(&p.bms_manufacturer, 16)); // 电池厂商
     wrap(cmd::BMS, &body)
+}
+
+fn parse_u16_list(raw: &str) -> Vec<u16> {
+    raw.split(',')
+        .filter_map(|s| s.trim().parse().ok())
+        .collect()
 }
 
 pub fn alarm(device_no: &str, alarm_type: u8, unix_time: u32) -> Vec<u8> {

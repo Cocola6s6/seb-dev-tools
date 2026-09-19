@@ -25,7 +25,6 @@ pub fn EcuPage() -> View {
             .collect::<Vec<EcuParam>>()
     });
 
-    // 输入正好命中某个参数名或中文名就直接选中，省得再点一次列表
     create_effect(move || {
         let kw = keyword.get_clone().trim().to_uppercase();
         if kw.is_empty() {

@@ -10,7 +10,6 @@ use tauri::State;
 #[serde(rename_all = "camelCase")]
 pub struct BatteryDefaults {
     pub battery_no: String,
-    pub env: String,
     pub host: String,
     pub port: u16,
     pub iccid: String,
@@ -35,13 +34,25 @@ pub struct BatteryPoll {
 
 #[tauri::command]
 pub fn battery_defaults() -> BatteryDefaults {
+    let b = seb_core::config::load().settings.battery;
+    let (host, port) = seb_core::config::split_endpoint(
+        &b.default_inner_gw,
+        DEFAULT_BATTERY_HOST,
+        DEFAULT_BATTERY_PORT,
+    );
+    let pick = |v: String, fallback: &str| {
+        if v.trim().is_empty() {
+            fallback.to_string()
+        } else {
+            v.trim().to_string()
+        }
+    };
     BatteryDefaults {
         battery_no: DEFAULT_BATTERY_NO.to_string(),
-        env: "内网".to_string(),
-        host: DEFAULT_BATTERY_HOST.to_string(),
-        port: DEFAULT_BATTERY_PORT,
-        iccid: DEFAULT_ICCID.to_string(),
-        coordinates: DEFAULT_COORDINATES.to_string(),
+        host,
+        port,
+        iccid: pick(b.default_iccid, DEFAULT_ICCID),
+        coordinates: pick(b.default_coordinates, DEFAULT_COORDINATES),
     }
 }
 
@@ -66,7 +77,11 @@ pub async fn battery_update_device(
     if config.battery_no.trim().is_empty() {
         return Err("电池编号不能为空".to_string());
     }
-    state.batteries.upsert(config);
+    let (link, host_moved) = state.batteries.upsert(config);
+    if host_moved && link.connected() {
+        link.note("服务端地址已变更，自动断开连接");
+        link.disconnect().await;
+    }
     persist(&state).await;
     Ok(state.batteries.states())
 }

@@ -10,6 +10,7 @@ pub mod client;
 pub mod config;
 pub mod deploy;
 pub mod ecu;
+pub mod hosts;
 pub mod instance;
 pub mod send;
 pub mod terminal;
@@ -58,15 +59,20 @@ impl SendResult {
 
 pub async fn publish(
     state: &AppState,
-    exchange: &str,
+    kind: seb_core::exchange::Kind,
     action: impl Into<String>,
     payload: serde_json::Value,
 ) -> Result<SendResult, String> {
     let body = payload.to_string();
     let mut publisher = state.publisher.lock().await;
-    let routing_key = seb_core::routing_key(exchange, &publisher.config().instance);
+    let (exchange, routing_key) = {
+        let cfg = publisher.config();
+        let exchange = kind.resolve(&cfg.settings.control);
+        let routing_key = seb_core::routing_key(&exchange, &cfg.instance);
+        (exchange, routing_key)
+    };
     publisher
-        .publish(exchange, &routing_key, &body)
+        .publish(&exchange, &routing_key, &body)
         .await
         .map(|rec| SendResult::from_record(action, rec))
         .map_err(|e| e.to_string())
