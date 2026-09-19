@@ -1,6 +1,6 @@
 [package]
 name = "seb-core"
-version = "0.2.3"
+version = "0.3.0"
 edition = "2021"
 description = "共享电单车中控调试与 ECU 配置发包工具核心库"
 license = "MIT"
