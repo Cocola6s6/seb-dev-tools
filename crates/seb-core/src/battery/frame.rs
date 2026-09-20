@@ -1,7 +1,7 @@
 //! CosPower 电池协议的常量、打包与解析。
 
 use crate::config::BatteryPayloadSettings;
-use crate::semantic::{Frame, FrameBuilder, BATTERY_HEADER_LEN};
+use crate::semantic::{Field, Frame, FrameBuilder, BATTERY_HEADER_LEN};
 use chrono::{Datelike, Local, Timelike};
 
 pub mod message_type {
@@ -104,6 +104,89 @@ fn put_alarm_bits(b: &mut FrameBuilder, byte: u8, bits: &[(u8, &str, &str)]) {
     }
 }
 
+fn message_type_name(t: u8) -> &'static str {
+    match t {
+        message_type::PING => "心跳",
+        message_type::LOGIN => "登录",
+        message_type::MONITOR => "监测",
+        message_type::CONTROL => "控制",
+        message_type::LOGOUT => "登出",
+        _ => "未知",
+    }
+}
+
+fn reply_tag_name(t: u8) -> &'static str {
+    match t {
+        reply_tag::SUCCESS => "成功",
+        reply_tag::FAIL => "失败",
+        reply_tag::REPEAT => "重复",
+        reply_tag::NON_REPLY => "无需回复",
+        _ => "未知",
+    }
+}
+
+/// 帧头 `FA FB | 报文类型 | 应答标志 | 电池编号(16) | 加密方式 | 内容长度(2)`
+/// 和帧尾 `校验和 | FB FA`。校验和是 index 2 到 body 末尾的异或
+pub fn envelope_fields(frame: &[u8]) -> (Vec<Field>, Vec<Field>) {
+    if frame.len() < BATTERY_HEADER_LEN + 3 {
+        return (Vec::new(), Vec::new());
+    }
+    let declared = u16::from_be_bytes([frame[21], frame[22]]);
+    let actual = frame.len() - BATTERY_HEADER_LEN - 3;
+    let length = if declared as usize == actual {
+        format!("{declared} 字节")
+    } else {
+        format!("{declared} 字节（实际 {actual}）")
+    };
+    let head = vec![
+        Field::new("startFlag", "起始位", to_hex(&frame[0..2]), 0, 2),
+        Field::new(
+            "messageType",
+            "报文类型",
+            format!("{}(0x{:02X})", message_type_name(frame[2]), frame[2]),
+            2,
+            3,
+        ),
+        Field::new(
+            "replyTag",
+            "应答标志",
+            format!("{}(0x{:02X})", reply_tag_name(frame[3]), frame[3]),
+            3,
+            4,
+        ),
+        Field::new(
+            "packId",
+            "电池编号",
+            String::from_utf8_lossy(&frame[4..20]).trim().to_string(),
+            4,
+            20,
+        ),
+        Field::new("encryptType", "加密方式", frame[20].to_string(), 20, 21),
+        Field::new("bodyLength", "内容长度", length, 21, BATTERY_HEADER_LEN),
+    ];
+    let at = frame.len() - 3;
+    let got = frame[at];
+    let want = frame[2..at].iter().fold(0u8, |acc, b| acc ^ b);
+    let checksum = if got == want {
+        format!("0x{got:02X} 校验通过")
+    } else {
+        format!("0x{got:02X} 校验不通过（应为 0x{want:02X}）")
+    };
+    (
+        head,
+        vec![
+            Field::new("checksum", "校验和", checksum, at, at + 1),
+            Field::new("endFlag", "结束位", to_hex(&frame[at + 1..]), at + 1, frame.len()),
+        ],
+    )
+}
+
+/// 所有上行帧都走它成帧，帧头帧尾的语义就不会漏
+fn seal(b: FrameBuilder, message_type: u8, reply_tag: u8, pack_id: &str, encrypt: u8) -> Frame {
+    b.finish(|body| build_frame(message_type, reply_tag, pack_id, encrypt, body))
+        .with_envelope(envelope_fields)
+}
+
 fn build_frame(
     message_type: u8,
     reply_tag: u8,
@@ -175,7 +258,7 @@ pub fn build_login_frame(
         format!("{sw_maj}.{sw_min}.{sw_rev}"),
         &[sw_maj, sw_min, sw_rev],
     );
-    b.finish(|body| build_frame(message_type::LOGIN, reply_tag::NON_REPLY, pack_id, 0x01, body))
+    seal(b, message_type::LOGIN, reply_tag::NON_REPLY, pack_id, 0x01)
 }
 
 pub fn build_location_frame(
@@ -195,7 +278,7 @@ pub fn build_location_frame(
     b.put("azimuthStr", "方位角", azimuth_str, &ascii_pad::<5>(azimuth_str));
     b.put("gpsCount", "GPS 星数", "0", &[0]);
     b.put("bdCount", "北斗星数", "0", &[0]);
-    b.finish(|body| build_frame(message_type::MONITOR, reply_tag::SUCCESS, pack_id, 0x01, body))
+    seal(b, message_type::MONITOR, reply_tag::SUCCESS, pack_id, 0x01)
 }
 
 pub fn build_alarm_frame(pack_id: &str, p: &BatteryPayloadSettings) -> Frame {
@@ -256,7 +339,7 @@ pub fn build_alarm_frame(pack_id: &str, p: &BatteryPayloadSettings) -> Frame {
         &p.alarm_fault_code.to_be_bytes(),
     );
 
-    b.finish(|body| build_frame(message_type::MONITOR, reply_tag::NON_REPLY, pack_id, 0x01, body))
+    seal(b, message_type::MONITOR, reply_tag::NON_REPLY, pack_id, 0x01)
 }
 
 pub fn build_runtime_frame(pack_id: &str, p: &BatteryPayloadSettings) -> Frame {
@@ -305,7 +388,7 @@ pub fn build_runtime_frame(pack_id: &str, p: &BatteryPayloadSettings) -> Frame {
     b.put("wakeInfo", "唤醒信息", "0", &[0]);
     b.raw(&[0x00, 0x00]);
 
-    b.finish(|body| build_frame(message_type::MONITOR, reply_tag::SUCCESS, pack_id, 0x01, body))
+    seal(b, message_type::MONITOR, reply_tag::SUCCESS, pack_id, 0x01)
 }
 
 fn join_nums<T: std::fmt::Display>(v: &[T]) -> String {
@@ -323,13 +406,13 @@ fn parse_u8_list(s: &str) -> Vec<u8> {
 pub fn build_ping_frame(pack_id: &str) -> Frame {
     let mut b = builder();
     put_time(&mut b);
-    b.finish(|body| build_frame(message_type::PING, reply_tag::NON_REPLY, pack_id, 0x01, body))
+    seal(b, message_type::PING, reply_tag::NON_REPLY, pack_id, 0x01)
 }
 
 pub fn build_logout_frame(pack_id: &str) -> Frame {
     let mut b = builder();
     put_time(&mut b);
-    b.finish(|body| build_frame(message_type::LOGOUT, reply_tag::NON_REPLY, pack_id, 0x01, body))
+    seal(b, message_type::LOGOUT, reply_tag::NON_REPLY, pack_id, 0x01)
 }
 
 pub fn build_control_reply(pack_id: &str) -> Frame {
@@ -337,7 +420,7 @@ pub fn build_control_reply(pack_id: &str) -> Frame {
     put_time(&mut b);
     b.put("command", "控制命令", "1 开关锁", &[0x01]);
     b.put("opCode", "执行结果", "1 成功", &[0x01]);
-    b.finish(|body| build_frame(message_type::CONTROL, reply_tag::SUCCESS, pack_id, 0x01, body))
+    seal(b, message_type::CONTROL, reply_tag::SUCCESS, pack_id, 0x01)
 }
 
 // ==================== 报文切分与解析 ====================
@@ -369,15 +452,8 @@ pub fn parse_battery_frame_summary(frame: &[u8]) -> String {
         return "未知/不完整报文".to_string();
     }
     let msg_type = frame[2];
-    let reply_tag = frame[3];
     let pack_id = String::from_utf8_lossy(&frame[4..20]).trim().to_string();
-    let tag_desc = match reply_tag {
-        reply_tag::SUCCESS => "成功",
-        reply_tag::FAIL => "失败",
-        reply_tag::REPEAT => "重复",
-        reply_tag::NON_REPLY => "无需回复",
-        _ => "未知",
-    };
+    let tag_desc = reply_tag_name(frame[3]);
 
     match msg_type {
         message_type::PING => format!("心跳响应 [设备: {pack_id}] tag={tag_desc}"),
@@ -398,6 +474,50 @@ pub fn parse_battery_frame_summary(frame: &[u8]) -> String {
     }
 }
 
+/// 下行报文的字段：帧头帧尾 + 报文体。
+/// 中台 Protocol.transferTo 里应答只写 6 字节时间就返回，所以应答的报文体只有时间；
+/// 平台主动下发的控制在时间后面还带控制命令和执行结果
+pub fn parse_battery_frame_fields(frame: &[u8]) -> Vec<Field> {
+    let (head, tail) = envelope_fields(frame);
+    if head.is_empty() {
+        return Vec::new();
+    }
+    let mut fields = head;
+    let body = BATTERY_HEADER_LEN;
+    let body_end = frame.len() - 3;
+    if body + 6 <= body_end {
+        let t = &frame[body..body + 6];
+        fields.push(Field::new(
+            "time",
+            "设备时间",
+            format!(
+                "20{:02}-{:02}-{:02} {:02}:{:02}:{:02}",
+                t[0], t[1], t[2], t[3], t[4], t[5]
+            ),
+            body,
+            body + 6,
+        ));
+    }
+    if body + 8 <= body_end {
+        fields.push(Field::new(
+            "command",
+            "控制命令",
+            frame[body + 6].to_string(),
+            body + 6,
+            body + 7,
+        ));
+        fields.push(Field::new(
+            "opCode",
+            "执行结果",
+            frame[body + 7].to_string(),
+            body + 7,
+            body + 8,
+        ));
+    }
+    fields.extend(tail);
+    fields
+}
+
 pub fn to_hex(data: &[u8]) -> String {
     data.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ")
 }
@@ -408,12 +528,18 @@ mod tests {
 
     /// 字段要顺序落在帧体内；同一个字节挂多个 bit 语义时区间会重复，只要不倒退
     fn check_spans(f: &Frame) {
-        let mut cursor = BATTERY_HEADER_LEN;
+        let mut cursor = 0;
         for field in &f.fields {
             assert!(field.start >= cursor && field.end > field.start, "{} 区间乱序", field.key);
-            assert!(field.end <= f.bytes.len() - 3, "{} 越过了校验位", field.key);
+            assert!(field.end <= f.bytes.len(), "{} 越过了帧尾", field.key);
             cursor = field.start;
         }
+        // 帧头帧尾也要有语义，光看 hex 排查不动
+        assert_eq!(f.fields.first().map(|x| x.key.as_str()), Some("startFlag"));
+        assert_eq!(f.fields.last().map(|x| x.key.as_str()), Some("endFlag"));
+        let sum = &f.fields[f.fields.len() - 2];
+        assert_eq!(sum.key, "checksum");
+        assert!(sum.value.contains("校验通过"), "{}", sum.value);
     }
 
     #[test]

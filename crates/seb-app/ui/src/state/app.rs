@@ -53,10 +53,12 @@ pub struct AppCtx {
     pub control_types: Signal<Vec<ControlType>>,
     pub deploy_options: Signal<DeployOptions>,
     pub toast_msg: Signal<Option<String>>,
+    toast_seq: Signal<u32>,
     pub show_whats_new: Signal<bool>,
 }
 
 const MAX_LOGS: usize = 500;
+const TOAST_MS: u32 = 3000;
 
 impl AppCtx {
     pub fn new() -> Self {
@@ -82,6 +84,7 @@ impl AppCtx {
             control_types: create_signal(Vec::new()),
             deploy_options: create_signal(DeployOptions::default()),
             toast_msg: create_signal(None),
+            toast_seq: create_signal(0),
             show_whats_new: create_signal(false),
         }
     }
@@ -110,12 +113,16 @@ impl AppCtx {
     }
 
     pub fn toast(&self, msg: impl Into<String>) {
-        let msg = msg.into();
-        self.toast_msg.set(Some(msg));
-        let toast_sig = self.toast_msg.clone();
+        self.toast_msg.set(Some(msg.into()));
+        let seq = self.toast_seq.get() + 1;
+        self.toast_seq.set(seq);
+        let (msg_sig, seq_sig) = (self.toast_msg, self.toast_seq);
         spawn_local(async move {
-            TimeoutFuture::new(1600).await;
-            toast_sig.set(None);
+            TimeoutFuture::new(TOAST_MS).await;
+            // 期间又弹了新的，就让新的那个定时器来收
+            if seq_sig.get() == seq {
+                msg_sig.set(None);
+            }
         });
     }
 

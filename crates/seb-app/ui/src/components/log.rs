@@ -43,6 +43,7 @@ fn mark(text: &str, terms: &[String]) -> View {
     view! { (parts) }
 }
 
+
 /// 分屏时左栏放日志，窄屏折回底部那条：和中控客户端同一套容器，比例动画都一致
 #[component(inline_props)]
 pub fn LogSplit(children: Children) -> View {
@@ -72,7 +73,7 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
     });
 
     {
-        let is_wide = is_wide.clone();
+        let is_wide = is_wide;
         let cb = wasm_bindgen::closure::Closure::<dyn FnMut()>::wrap(Box::new(move || {
             let w = web_sys::window()
                 .and_then(|w| w.inner_width().ok())
@@ -82,7 +83,10 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
         }));
         if let Some(w) = web_sys::window() {
             let _ = w.add_event_listener_with_callback("resize", cb.as_ref().unchecked_ref());
-            cb.forget();
+            // 日志面板随分屏反复挂载，监听不摘就会堆在已销毁的作用域上，回调一跑就炸
+            on_cleanup(move || {
+                let _ = w.remove_event_listener_with_callback("resize", cb.as_ref().unchecked_ref());
+            });
         }
     }
 
@@ -116,21 +120,22 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
     });
-    // 过滤后的日志，bool 是「只在展开区命中」，用来自动把那条展开
-    let visible = create_memo(move || {
+
+    let match_indices = create_memo(move || {
         let terms = terms.get_clone();
-        let all = ctx.logs.get_clone();
         if terms.is_empty() {
-            return all.into_iter().map(|e| (e, false)).collect::<Vec<_>>();
+            return Vec::new();
         }
-        all.into_iter()
-            .filter_map(|e| e.hit(&terms).map(|deep| (e, deep)))
-            .collect()
+        let all = ctx.logs.get_clone();
+        all.iter()
+            .enumerate()
+            .filter_map(|(idx, e)| if e.hit(&terms).is_some() { Some(idx) } else { None })
+            .collect::<Vec<usize>>()
     });
 
     create_effect(move || {
         let _ = ctx.logs.get_clone().len();
-        // 过滤时新日志不该把正在看的位置顶走
+        // 搜索时新日志不该把正在看的位置顶走
         if !minimized.get() && terms.with(Vec::is_empty) {
             spawn_local(async move {
                 TimeoutFuture::new(0).await;
@@ -167,13 +172,18 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
         });
     };
 
-    // 过滤状态下只复制筛出来的那些行
     let copy = move |ev: web_sys::MouseEvent| {
         ev.stop_propagation();
-        let text = visible
-            .get_clone()
+        let all = ctx.logs.get_clone();
+        let indices = match_indices.get_clone();
+        let list: Vec<&LogEntry> = if indices.is_empty() {
+            all.iter().collect()
+        } else {
+            indices.iter().filter_map(|&i| all.get(i)).collect()
+        };
+        let text = list
             .iter()
-            .map(|(e, _)| {
+            .map(|e| {
                 if e.hex.is_empty() {
                     format!("{}  {}", e.ts, e.text)
                 } else {
@@ -194,22 +204,22 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
         ctx.logs.set(Vec::new());
     };
 
-    // 输入框在两处日志里各有一份，焦点给当前看得见的那份
     let focus_search = || {
         spawn_local(async move {
-            TimeoutFuture::new(0).await;
+            TimeoutFuture::new(20).await;
             if let Some(list) = web_sys::window()
                 .and_then(|w| w.document())
-                .and_then(|d| d.query_selector_all(".log-search.open input").ok())
+                .and_then(|d| d.query_selector_all(".log-search.open input, .log-search input").ok())
             {
                 for i in 0..list.length() {
                     if let Some(el) = list
                         .item(i)
                         .and_then(|n| n.dyn_into::<web_sys::HtmlInputElement>().ok())
                     {
-                        if el.client_width() > 0 {
+                        if el.offset_parent().is_some() || el.client_width() > 0 {
                             let _ = el.focus();
                             el.select();
+                            break;
                         }
                     }
                 }
@@ -217,35 +227,100 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
         });
     };
 
+    let cursor = create_signal(None::<usize>);
+
+    let jump_to = move |dir_next: bool| {
+        let indices = match_indices.get_clone();
+        if indices.is_empty() {
+            return;
+        }
+        let total = indices.len();
+        let next_cursor = match cursor.get() {
+            None => if dir_next { 0 } else { total.saturating_sub(1) },
+            Some(curr) => if dir_next {
+                (curr + 1) % total
+            } else {
+                (curr + total - 1) % total
+            },
+        };
+        cursor.set(Some(next_cursor));
+        let target_line_index = indices[next_cursor];
+        api::scroll_log_to_hit(target_line_index);
+    };
+
+    create_effect(move || {
+        let indices = match_indices.get_clone();
+        if indices.is_empty() {
+            cursor.set(None);
+        } else {
+            cursor.set(Some(0));
+            api::scroll_log_to_hit(indices[0]);
+        }
+    });
+
     let on_search_key = move |ev: web_sys::KeyboardEvent| {
-        if ev.key() == "Escape" {
-            ctx.log_query.set(String::new());
-            ctx.log_search_open.set(false);
+        if ev.is_composing() {
+            return;
+        }
+        match ev.key().as_str() {
+            "Escape" => {
+                ev.prevent_default();
+                ev.stop_propagation();
+                ctx.log_query.set(String::new());
+                ctx.log_search_open.set(false);
+                cursor.set(None);
+            }
+            "Enter" => {
+                ev.prevent_default();
+                ev.stop_propagation();
+                jump_to(!ev.shift_key());
+            }
+            _ => {}
         }
     };
 
-    // 没有图标可点，空着离开就自己收起来
     let on_search_blur = move |_| {
-        if ctx.log_query.get_clone().trim().is_empty() {
-            ctx.log_search_open.set(false);
-        }
+        spawn_local(async move {
+            TimeoutFuture::new(120).await;
+            let still_in_search = web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.active_element())
+                .and_then(|el| el.closest(".log-search").ok().flatten())
+                .is_some();
+            if !still_in_search && ctx.log_query.get_clone().trim().is_empty() {
+                ctx.log_search_open.set(false);
+            }
+        });
     };
 
-    // Cmd/Ctrl+F 直接开过滤框，只在底部那份注册，避免重复监听
-    if !docked {
+    let is_hovered = create_signal(false);
+
+    // Cmd/Ctrl+F 只有在日志区域（鼠标悬停或焦点在日志内）才触发
+    {
         let cb = wasm_bindgen::closure::Closure::<dyn FnMut(web_sys::KeyboardEvent)>::wrap(
             Box::new(move |ev: web_sys::KeyboardEvent| {
                 if ev.key() == "f" && (ev.meta_key() || ev.ctrl_key()) {
-                    ev.prevent_default();
-                    ctx.log_search_open.set(true);
-                    minimized.set(false);
-                    focus_search();
+                    let in_log = is_hovered.get() || {
+                        web_sys::window()
+                            .and_then(|w| w.document())
+                            .and_then(|d| d.active_element())
+                            .and_then(|el| el.closest(".log-pane").ok().flatten())
+                            .is_some()
+                    };
+                    if in_log {
+                        ev.prevent_default();
+                        ctx.log_search_open.set(true);
+                        minimized.set(false);
+                        focus_search();
+                    }
                 }
             }),
         );
         if let Some(w) = web_sys::window() {
             let _ = w.add_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref());
-            cb.forget();
+            on_cleanup(move || {
+                let _ = w.remove_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref());
+            });
         }
     }
 
@@ -309,8 +384,13 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
     };
 
     view! {
-        div(class=pane_cls(), style=pane_style()) {
-            (if !docked && !minimized.get() {
+        div(
+            class=pane_cls(),
+            style=pane_style(),
+            on:mouseenter=move |_| is_hovered.set(true),
+            on:mouseleave=move |_| is_hovered.set(false),
+        ) {
+            (move || if !docked && !minimized.get() {
                 view! {
                     div(class="log-resizer", on:mousedown=on_resizer_down) {}
                 }
@@ -318,10 +398,24 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                 view! {}
             })
             div(class="log-head", on:click=on_head_click, on:dblclick=on_dblclick) {
-                span { "日志" }
+                span(
+                    style="cursor: pointer;",
+                    on:click=move |ev: web_sys::MouseEvent| {
+                        ev.stop_propagation();
+                        if !docked && minimized.get() {
+                            minimized.set(false);
+                        }
+                        ctx.log_search_open.set(true);
+                        focus_search();
+                    }
+                ) { "日志" }
                 div(
-                    class=move || if ctx.log_search_open.get() { "log-search open" } else { "log-search" },
-                    on:click=|ev: web_sys::MouseEvent| ev.stop_propagation(),
+                    class=move || if ctx.log_search_open.get() || !ctx.log_query.get_clone().is_empty() { "log-search open" } else { "log-search" },
+                    on:click=move |ev: web_sys::MouseEvent| {
+                        ev.stop_propagation();
+                        ctx.log_search_open.set(true);
+                        focus_search();
+                    },
                     on:dblclick=|ev: web_sys::MouseEvent| ev.stop_propagation(),
                 ) {
                     input(
@@ -332,15 +426,6 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                         on:blur=on_search_blur,
                     )
                 }
-                (if terms.with(Vec::is_empty) {
-                    view! {}
-                } else {
-                    view! {
-                        span(class="log-count") {
-                            (format!("{} / {}", visible.with(Vec::len), ctx.logs.with(Vec::len)))
-                        }
-                    }
-                })
                 span(class="spacer") {}
                 div(class="btn-with-tip") {
                     button(class="link", on:click=open_terminal) { "真车日志" }
@@ -349,12 +434,12 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                 button(class="link", on:click=copy) { "复制" }
                 button(class="link", on:click=clear) { "清空" }
             }
-            (if !collapsed() {
+            (move || if !collapsed() {
                 view! {
                     div(class="log-body") {
                         Indexed(
-                            list=visible,
-                            view=move |(entry, deep): (LogEntry, bool)| {
+                            list=ctx.logs,
+                            view=move |entry: LogEntry| {
                                 let ts_cls = format!("log-ts ts-{}", entry.tint);
                                 let dir = match entry.dir {
                                     Some("up") => view! { span(class="dir up") { "↑" } },
@@ -367,14 +452,22 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                                     let dev_txt = format!("[{}]", entry.device);
                                     view! { span(class="log-dev") { (terms.with(|t| mark(&dev_txt, t))) } }
                                 };
-                                // 命中落在展开区里，直接展开给看
-                                let open = create_signal(deep);
+                                let open = create_signal(false);
                                 let hover = create_signal(None::<(usize, usize)>);
                                 let expandable = !entry.fields.is_empty() || !entry.hex.is_empty();
+                                let entry_cls = entry.clone();
                                 let cls = {
                                     let base = format!("log-line {}", entry.level.css());
                                     move || if expandable {
-                                        format!("{base} expandable{}", if open.get() { " open" } else { "" })
+                                        let t = terms.get_clone();
+                                        let has_match = !t.is_empty() && entry_cls.hit(&t).unwrap_or(false);
+                                        if open.get() {
+                                            format!("{base} expandable open")
+                                        } else if has_match {
+                                            format!("{base} expandable has-match")
+                                        } else {
+                                            format!("{base} expandable")
+                                        }
                                     } else {
                                         base.clone()
                                     }
@@ -384,9 +477,19 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                                         open.set(!open.get());
                                     }
                                 };
+                                let entry_caret = entry.clone();
+                                let caret_cls = move || {
+                                    let t = terms.get_clone();
+                                    let has_match = !t.is_empty() && entry_caret.hit(&t).unwrap_or(false);
+                                    if !open.get() && has_match {
+                                        "log-caret has-match"
+                                    } else {
+                                        "log-caret"
+                                    }
+                                };
                                 let caret = if expandable {
                                     view! {
-                                        svg(class="log-caret", viewBox="0 0 24 24", fill="currentColor", on:click=toggle) {
+                                        svg(class=caret_cls(), viewBox="0 0 24 24", fill="currentColor", on:click=toggle) {
                                             path(d="M9 5l8 7-8 7z") {}
                                         }
                                     }
@@ -395,12 +498,10 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                                 };
                                 let hex = entry.hex.clone();
                                 let fields = entry.fields.clone();
-                                // 报文和字段表都收在展开区里，日志行本身一条只占一行
                                 let detail = move || {
                                     if !open.get() {
                                         return view! {};
                                     }
-                                    // 悬停字段时把它占的那几个字节从报文里挑出来
                                     let hex_node = if hex.is_empty() {
                                         view! {}
                                     } else {
@@ -412,13 +513,15 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                                                     (head.to_string(), mid.to_string(), tail.to_string());
                                                 view! {
                                                     div(class="log-hex") {
-                                                        (head) span(class="hex-hit") { (mid) } (tail)
+                                                        (terms.with(|t| mark(&head, t)))
+                                                        span(class="hex-hit") { (terms.with(|t| mark(&mid, t))) }
+                                                        (terms.with(|t| mark(&tail, t)))
                                                     }
                                                 }
                                             }
                                             None => {
                                                 let hex = hex.clone();
-                                                view! { div(class="log-hex") { (hex) } }
+                                                view! { div(class="log-hex") { (terms.with(|t| mark(&hex, t))) } }
                                             }
                                         }
                                     };
@@ -463,7 +566,7 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                                         (detail)
                                     }
                                 }
-                            }
+                            },
                         )
                     }
                 }

@@ -372,6 +372,58 @@ pub fn wrap(command: u8, body: &[u8]) -> Vec<u8> {
     frame
 }
 
+/// 传输层头 `AA AA | 包长度(2) | 版本号 | 命令码 | 流水号 | 保留(3)` 和传输层尾 CRC。
+/// 这几个 key 属于协议传输层，中台上行 DTO 里没有对应字段
+pub fn envelope_fields(frame: &[u8]) -> (Vec<Field>, Vec<Field>) {
+    if frame.len() < TBIT_HEADER_LEN + 2 {
+        return (Vec::new(), Vec::new());
+    }
+    let declared = u16::from_be_bytes([frame[2], frame[3]]);
+    let length = if declared as usize == frame.len() {
+        format!("{declared} 字节")
+    } else {
+        format!("{declared} 字节（实际 {}）", frame.len())
+    };
+    let version = frame[4];
+    let head = vec![
+        Field::new("startFlag", "起始位", to_hex(&frame[0..2]), 0, 2),
+        Field::new("packetLength", "包长度", length, 2, 4),
+        Field::new(
+            "version",
+            "版本号",
+            format!(
+                "0x{version:02X} {}",
+                if version & 1 == 1 { "加密" } else { "不加密" }
+            ),
+            4,
+            5,
+        ),
+        Field::new(
+            "command",
+            "命令码",
+            format!("{}(0x{:02X})", cmd_name(frame[5]), frame[5]),
+            5,
+            6,
+        ),
+        Field::new("serialNo", "流水号", frame[6].to_string(), 6, 7),
+        Field::new("reserved", "保留", to_hex(&frame[7..TBIT_HEADER_LEN]), 7, TBIT_HEADER_LEN),
+    ];
+    let at = frame.len() - 2;
+    let got = u16::from_be_bytes([frame[at], frame[at + 1]]);
+    let want = crc16_x25(&frame[2..at]);
+    let crc = if got == want {
+        format!("0x{got:04X} 校验通过")
+    } else {
+        format!("0x{got:04X} 校验不通过（应为 0x{want:04X}）")
+    };
+    (head, vec![Field::new("crc", "错误校验", crc, at, at + 2)])
+}
+
+/// 所有上行帧都走它成帧，帧头帧尾的语义就不会漏
+fn seal(b: FrameBuilder, command: u8) -> Frame {
+    b.finish(|body| wrap(command, body)).with_envelope(envelope_fields)
+}
+
 pub const DEFAULT_SOFT_VERSION: &str = "NS_TBIT_WD-219_R.2.0.7_09-4-2023 17:26:09 &T650_G.C.OPENCPU_ZB_WM-007-008-005_GPS_ACC_BLE_ECU_N58_OTA_H-0001_S-0000";
 
 pub fn login(device_no: &str, soft_version: &str, unix_time: u32) -> Frame {
@@ -406,7 +458,7 @@ pub fn login(device_no: &str, soft_version: &str, unix_time: u32) -> Frame {
         soft_version,
         &fixed_ascii(soft_version, 115),
     );
-    b.finish(|body| wrap(cmd::LOGIN, body))
+    seal(b, cmd::LOGIN)
 }
 
 pub fn ping(device_no: &str, soc: u8, p: &ClientPayloadSettings) -> Frame {
@@ -453,7 +505,7 @@ pub fn ping(device_no: &str, soc: u8, p: &ClientPayloadSettings) -> Frame {
         "0",
         &0u16.to_be_bytes(),
     );
-    b.finish(|body| wrap(cmd::PING, body))
+    seal(b, cmd::PING)
 }
 
 /// 指令应答（命令码 0xAC）：`处理结果(1) + TLV 个数(1, 这里为 0) + 消息 ID(ASCII)`。
@@ -467,7 +519,7 @@ pub fn reply(msg_id: &str, success: bool) -> Frame {
     );
     b.raw(&[0]); // TLV 个数
     b.put("msgId", "消息 ID", msg_id, msg_id.as_bytes());
-    b.finish(|body| wrap(cmd::REPLY, body))
+    seal(b, cmd::REPLY)
 }
 
 /// 参数查询/设置的应答：ASCII 的 "KEY=VALUE;" 拼到一起，后面接 34 字节 msgId
@@ -478,7 +530,7 @@ pub fn param_reply(command: u8, entries: &[(String, String)], msg_id: &str) -> F
         b.put("queryResult", k.clone(), v.clone(), text.as_bytes());
     }
     b.put("msgId", "消息 ID", msg_id, msg_id.as_bytes());
-    b.finish(|body| wrap(command, body))
+    seal(b, command)
 }
 
 // 上行业务包的字段顺序与默认值对齐 Python 模拟器 (seb-iot/python/iot/tbit)，改动前先比对那边。
@@ -757,7 +809,7 @@ pub fn location(
             &smart_helmet(o.helmet_lock_unlocked, o.helmet_present),
         ),
     );
-    b.finish(|body| wrap(cmd::LOCATION, body))
+    seal(b, cmd::LOCATION)
 }
 
 pub fn bms(
@@ -864,7 +916,7 @@ pub fn bms(
         &p.bms_manufacturer,
         &fixed_ascii(&p.bms_manufacturer, 16),
     );
-    b.finish(|body| wrap(cmd::BMS, body))
+    seal(b, cmd::BMS)
 }
 
 fn parse_u16_list(raw: &str) -> Vec<u16> {
@@ -916,7 +968,7 @@ pub fn alarm(device_no: &str, alarm_type: u8, unix_time: u32) -> Frame {
         "100",
         &100u16.to_be_bytes(),
     );
-    b.finish(|body| wrap(cmd::ALARM, body))
+    seal(b, cmd::ALARM)
 }
 
 /// 预还车应答：网关据这 6 个 TLV 判定头盔 / 尾箱 / 停车姿态
@@ -1000,12 +1052,12 @@ pub fn reply_pre_return(msg_id: &str, o: &PreReturnOpts) -> Frame {
         &tlv(tlv_tag::VEHICLE_INFO, &vehicle_info),
     );
     b.put("msgId", "消息 ID", msg_id, msg_id.as_bytes());
-    b.finish(|body| wrap(cmd::REPLY, body))
+    seal(b, cmd::REPLY)
 }
 
 /// 中控上报的是 WGS84，而调试时手上拿到的坐标基本都是高德 GCJ02
 pub fn gcj02_to_wgs84(lng: f64, lat: f64) -> (f64, f64) {
-    const PI: f64 = 3.1415926535897932384626;
+    use std::f64::consts::PI;
     const A: f64 = 6378245.0;
     const EE: f64 = 0.00669342162296594323;
 
@@ -1014,7 +1066,7 @@ pub fn gcj02_to_wgs84(lng: f64, lat: f64) -> (f64, f64) {
     }
 
     fn transform_lat(lng: f64, lat: f64) -> f64 {
-        const PI: f64 = 3.1415926535897932384626;
+        use std::f64::consts::PI;
         let mut ret = -100.0 + 2.0 * lng + 3.0 * lat + 0.2 * lat * lat
             + 0.1 * lng * lat
             + 0.2 * lng.abs().sqrt();
@@ -1025,7 +1077,7 @@ pub fn gcj02_to_wgs84(lng: f64, lat: f64) -> (f64, f64) {
     }
 
     fn transform_lng(lng: f64, lat: f64) -> f64 {
-        const PI: f64 = 3.1415926535897932384626;
+        use std::f64::consts::PI;
         let mut ret =
             300.0 + lng + 2.0 * lat + 0.1 * lng * lng + 0.1 * lng * lat + 0.1 * lng.abs().sqrt();
         ret += (20.0 * (6.0 * lng * PI).sin() + 20.0 * (2.0 * lng * PI).sin()) * 2.0 / 3.0;
@@ -1133,7 +1185,47 @@ pub fn parse(frame: &[u8]) -> Option<Parsed> {
     } else {
         Vec::new()
     };
-    let mut fields = Vec::new();
+    let (head, tail) = envelope_fields(frame);
+    let mut fields = head;
+    let body = TBIT_HEADER_LEN;
+    let body_end = frame.len() - 2;
+    match command {
+        // 4.3.01（2）服务器应答：登陆结果 1 + 服务器时间 4
+        cmd::LOGIN_REPLY if body + 5 <= body_end => {
+            let result = match frame[body] {
+                0 => "成功",
+                1 => "失败",
+                2 => "无效",
+                3 => "非法",
+                _ => "未知",
+            };
+            fields.push(Field::new("loginResult", "登陆应答", result, body, body + 1));
+            let t = u32::from_be_bytes([
+                frame[body + 1],
+                frame[body + 2],
+                frame[body + 3],
+                frame[body + 4],
+            ]);
+            fields.push(Field::new(
+                "serverTime",
+                "服务器时间",
+                time_text(t),
+                body + 1,
+                body + 5,
+            ));
+        }
+        // 4.3.12（1）平台下发：提示音指令 1 + MsgID
+        cmd::VOICE if body < body_end => {
+            fields.push(Field::new(
+                "voiceCommand",
+                "提示音指令",
+                frame[body].to_string(),
+                body,
+                body + 1,
+            ));
+        }
+        _ => {}
+    }
     if let Some(c) = control_command {
         let name = crate::CONTROL_TYPES
             .iter()
@@ -1166,6 +1258,7 @@ pub fn parse(frame: &[u8]) -> Option<Parsed> {
     if let (Some(id), Some(start)) = (&msg_id, id_at) {
         fields.push(Field::new("msgId", "消息 ID", id, start, frame.len() - 2));
     }
+    fields.extend(tail);
     Some(Parsed {
         command,
         declared_len,
@@ -1211,7 +1304,7 @@ mod tests {
     /// 语义字段必须按顺序落在帧体内，否则高亮和翻译就对不上字节。
     /// 一段字节塞多个 bit 语义时允许重复挂同一区间。
     fn check_spans(f: &Frame) {
-        let mut cursor = TBIT_HEADER_LEN;
+        let mut cursor = 0;
         let mut prev = (0, 0);
         for field in &f.fields {
             assert!(
@@ -1221,14 +1314,16 @@ mod tests {
                 field.key,
                 (field.start, field.end)
             );
-            assert!(
-                field.end <= f.bytes.len() - 2,
-                "{} 越过了 CRC",
-                field.key
-            );
+            assert!(field.end <= f.bytes.len(), "{} 越过了帧尾", field.key);
             cursor = field.end;
             prev = (field.start, field.end);
         }
+        // 帧头帧尾也要有语义，光看 hex 排查不动
+        assert_eq!(f.fields.first().map(|x| x.key.as_str()), Some("startFlag"));
+        let crc = f.fields.last().expect("帧尾字段");
+        assert_eq!(crc.key, "crc");
+        assert!(crc.value.contains("校验通过"), "{}", crc.value);
+        assert_eq!((crc.start, crc.end), (f.bytes.len() - 2, f.bytes.len()));
     }
 
     #[test]
@@ -1286,5 +1381,34 @@ mod tests {
         let parsed = parse(&wrap(cmd::QUERY_PARAM, &body)).unwrap();
         assert_eq!(parsed.params, vec!["SVRIP", "HBTIME"]);
         assert_eq!(parsed.msg_id.as_deref(), Some(MSG_ID_32));
+    }
+
+    /// 下行报文也要带帧头帧尾，空体的应答至少能看到这两截
+    #[test]
+    fn 下行报文解析出帧头帧尾() {
+        let mut body = vec![0x00];
+        body.extend_from_slice(&1_758_000_000u32.to_be_bytes());
+        let parsed = parse(&wrap(cmd::LOGIN_REPLY, &body)).unwrap();
+        let keys: Vec<&str> = parsed.fields.iter().map(|f| f.key.as_str()).collect();
+        assert_eq!(
+            keys,
+            [
+                "startFlag",
+                "packetLength",
+                "version",
+                "command",
+                "serialNo",
+                "reserved",
+                "loginResult",
+                "serverTime",
+                "crc",
+            ]
+        );
+        assert!(parsed.crc_ok);
+        assert!(parsed.fields.last().unwrap().value.contains("校验通过"));
+
+        // 心跳应答没有报文体，只剩帧头帧尾
+        let empty = parse(&wrap(cmd::PING_REPLY, &[])).unwrap();
+        assert_eq!(empty.fields.len(), 7);
     }
 }

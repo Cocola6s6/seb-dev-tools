@@ -251,7 +251,10 @@ pub fn device_list(src: DeviceSource) -> View {
         }));
         if let Some(w) = web_sys::window() {
             let _ = w.add_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref());
-            cb.forget();
+            // 换页会把这份设备列表拆掉，监听留着就是对已销毁的作用域取信号
+            on_cleanup(move || {
+                let _ = w.remove_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref());
+            });
         }
     }
 

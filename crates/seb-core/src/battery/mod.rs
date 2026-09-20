@@ -224,12 +224,11 @@ impl BatteryLink {
                             let (frames, used) = split_battery_frames(&pending);
                             pending.drain(0..used);
                             for f in frames {
-                                let summary = parse_battery_frame_summary(&f);
                                 shared.push(BatteryFrameLog {
                                     dir: "down".into(),
-                                    summary,
+                                    summary: parse_battery_frame_summary(&f),
                                     hex: to_hex(&f),
-                                    fields: Vec::new(),
+                                    fields: parse_battery_frame_fields(&f),
                                 });
 
                                 if f.len() >= 26 && f[2] == message_type::CONTROL {

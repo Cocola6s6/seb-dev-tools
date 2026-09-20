@@ -68,9 +68,9 @@ pub fn MapPickerModal(
 
     let locate_my_pos = move |_| {
         locating.set(true);
-        let current_pick_clone = current_pick.clone();
-        let custom_input_clone = custom_input.clone();
-        let locating_clone = locating.clone();
+        let current_pick_clone = current_pick;
+        let custom_input_clone = custom_input;
+        let locating_clone = locating;
 
         api::locate_current_position(move |picked| {
             locating_clone.set(false);

@@ -48,6 +48,16 @@ pub struct Frame {
     pub fields: Vec<Field>,
 }
 
+impl Frame {
+    /// 帧头帧尾只跟成帧后的字节有关，所以成帧后再补语义；body 字段的区间不受影响
+    pub fn with_envelope(mut self, f: impl FnOnce(&[u8]) -> (Vec<Field>, Vec<Field>)) -> Self {
+        let (head, tail) = f(&self.bytes);
+        self.fields.splice(0..0, head);
+        self.fields.extend(tail);
+        self
+    }
+}
+
 /// 写字节必须经过它，语义就不可能和构造漂开。
 pub struct FrameBuilder {
     header_len: usize,

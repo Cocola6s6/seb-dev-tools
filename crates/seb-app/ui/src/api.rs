@@ -39,6 +39,12 @@ export function js_start_log_resize(on_resize, on_end) {
         window.startLogResize(on_resize, on_end);
     }
 }
+
+export function js_scroll_log_to_hit(index) {
+    if (window.scrollLogToHit) {
+        window.scrollLogToHit(index);
+    }
+}
 "###)]
 extern "C" {
     #[wasm_bindgen(catch)]
@@ -49,6 +55,7 @@ extern "C" {
     fn js_jump_map_coord(lng: f64, lat: f64);
     fn js_locate_current_position(callback: &js_sys::Function);
     fn js_start_log_resize(on_resize: &js_sys::Function, on_end: &js_sys::Function);
+    fn js_scroll_log_to_hit(index: u32);
 }
 
 #[derive(Serialize)]
@@ -136,6 +143,10 @@ pub fn start_log_resize(on_resize: impl Fn(f64) + 'static, on_end: impl Fn() + '
     js_start_log_resize(cb_resize.as_ref().unchecked_ref(), cb_end.as_ref().unchecked_ref());
     cb_resize.forget();
     cb_end.forget();
+}
+
+pub fn scroll_log_to_hit(index: usize) {
+    js_scroll_log_to_hit(index as u32);
 }
 
 pub async fn get_config() -> Result<AppConfig, String> {

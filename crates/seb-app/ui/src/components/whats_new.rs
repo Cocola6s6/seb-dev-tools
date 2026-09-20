@@ -48,8 +48,15 @@ pub fn WhatsNewNotice() -> View {
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
+                                span(class="whats-new-label") { "报文解析" }
+                                "：完整解析二进制报文的中台语义与字节映射，支持搜索匹配与未展开行即时高亮。"
+                            }
+                        }
+                        div(class="whats-new-item") {
+                            span(class="whats-new-bullet") {}
+                            div(class="whats-new-text") {
                                 span(class="whats-new-label") { "百宝箱快捷方式" }
-                                "：单击展开二维码，双击切换全局/系统配置，三击敲鸡蛋或切换本地 host。"
+                                "：单击展开二维码，双击切换全局/系统配置，三击敲鸡蛋或在内网/外网/正式之间切换 hosts。"
                             }
                         }
                         div(class="whats-new-item") {
@@ -63,7 +70,7 @@ pub fn WhatsNewNotice() -> View {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
                                 span(class="whats-new-label") { "设备环境区分" }
-                                "：设备列表清晰区分内网/测试等网关环境，顶栏在线状态按环境精准分流。"
+                                "：设备列表清晰区分内网/外网/正式等网关环境，顶栏在线状态按环境精准分流。"
                             }
                         }
                         div(class="whats-new-item") {

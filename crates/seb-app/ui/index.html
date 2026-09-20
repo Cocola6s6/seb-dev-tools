@@ -1500,27 +1500,55 @@
       transition-delay: 0.5s;
     }
     /* 平时不占位，Cmd/Ctrl+F 才滑出来 */
-    .log-search { display: flex; align-items: center; }
+    .log-search {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+    }
     .log-search input {
       width: 0;
-      padding: 0;
-      border: none;
+      height: 22px;
+      line-height: 22px;
+      padding: 0 4px;
+      margin: 0;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
       background: transparent;
       font-size: 12px;
+      color: var(--text);
       opacity: 0;
       pointer-events: none;
+      box-sizing: border-box;
       transition: width .24s cubic-bezier(0.16, 1, 0.3, 1), opacity .2s ease;
     }
     .log-search.open input {
       width: 190px;
-      margin-left: 10px;
+      margin-left: 8px;
       opacity: 1;
       pointer-events: auto;
-      border-bottom: 1px solid var(--line);
     }
-    .log-search input:focus { outline: none; border-bottom-color: var(--accent); }
-    .log-count { color: var(--muted); font-size: 11px; }
-    .term-hit { background: #fff3cd; border-radius: 3px; }
+    .term-hit {
+      background: #ffec99;
+      color: #7c4400;
+      border-radius: 2px;
+      padding: 0 1px;
+    }
+    .term-hit.current-term-hit {
+      background: #ff7d00 !important;
+      color: #ffffff !important;
+      border-radius: 2px;
+      padding: 0 2px;
+    }
+    .log-line.expandable.has-match:not(.open) {
+      background: #fff8f0;
+      border-radius: 4px;
+      padding: 1px 4px;
+      margin: 0 -4px;
+    }
+    .log-caret.has-match {
+      color: #ff7d00 !important;
+    }
     .log-pane.minimized .log-head {
       border-bottom: none;
       border-radius: calc(var(--radius) - 1px);
@@ -2126,6 +2154,46 @@
 
       window.addEventListener('mousemove', onMouseMove);
       window.addEventListener('mouseup', onMouseUp);
+    };
+
+    window.scrollLogToHit = function(index) {
+      setTimeout(function() {
+        const bodies = document.querySelectorAll('.log-body');
+        bodies.forEach(function(body) {
+          if (body.clientWidth === 0 && body.clientHeight === 0) return;
+          const lines = body.querySelectorAll('.log-line');
+          if (!lines || lines.length === 0) return;
+          body.querySelectorAll('.term-hit.current-term-hit, .hex-hit.current-term-hit').forEach(function(el) {
+            el.classList.remove('current-term-hit');
+          });
+          lines.forEach(function(l, i) {
+            if (i === index) {
+              l.classList.add('current');
+              const termEl = l.querySelector('.term-hit, .hex-hit');
+              if (termEl) {
+                l.querySelectorAll('.term-hit, .hex-hit').forEach(function(th) {
+                  th.classList.add('current-term-hit');
+                });
+              }
+              const targetEl = termEl || l;
+              const bodyRect = body.getBoundingClientRect();
+              const targetRect = targetEl.getBoundingClientRect();
+              const targetOffsetInBody = targetRect.top - bodyRect.top;
+              const desiredScroll = body.scrollTop + targetOffsetInBody - (body.clientHeight / 2) + (targetRect.height / 2);
+              try {
+                body.scrollTo({
+                  top: Math.max(0, desiredScroll),
+                  behavior: 'smooth'
+                });
+              } catch (e) {
+                body.scrollTop = Math.max(0, desiredScroll);
+              }
+            } else {
+              l.classList.remove('current');
+            }
+          });
+        });
+      }, 16);
     };
   </script>
   <link data-trunk rel="rust" data-bin="seb-ui" />
