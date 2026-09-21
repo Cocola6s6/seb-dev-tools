@@ -325,6 +325,8 @@ pub enum TripleClickAction {
     Hosts,
 }
 
+pub const DEFAULT_EGG_URL: &str = "https://ccs.costrip.cn/seb-oss/bikeManage/bikeRecord";
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct GlobalSettings {
@@ -345,7 +347,7 @@ impl Default for GlobalSettings {
             client: ClientGlobalSettings::default(),
             battery: BatteryGlobalSettings::default(),
             control: ControlGlobalSettings::default(),
-            egg_url: String::new(),
+            egg_url: DEFAULT_EGG_URL.to_string(),
             triple_click: TripleClickAction::default(),
             hosts_inner: crate::hosts::DEFAULT_HOSTS_INNER.to_string(),
             hosts_uat: crate::hosts::DEFAULT_HOSTS_UAT.to_string(),

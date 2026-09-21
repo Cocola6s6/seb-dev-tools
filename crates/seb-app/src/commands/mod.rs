@@ -14,11 +14,14 @@ pub mod hosts;
 pub mod instance;
 pub mod send;
 pub mod terminal;
+pub mod window;
 
 pub struct AppState {
     pub publisher: Mutex<Publisher>,
     pub devices: DeviceFleet,
     pub batteries: BatteryFleet,
+    /// 工具条自己没有日志区，它干的事记在这儿，由主窗轮询取走
+    ui_logs: std::sync::Mutex<Vec<UiLog>>,
 }
 
 impl AppState {
@@ -31,8 +34,31 @@ impl AppState {
             publisher: Mutex::new(Publisher::new(cfg)),
             devices,
             batteries,
+            ui_logs: std::sync::Mutex::new(Vec::new()),
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UiLog {
+    pub text: String,
+    pub level: String,
+}
+
+/// 主窗没开的时候日志先攒着，等它回来一起补上；攒太多就丢最早的
+pub fn push_log(state: &AppState, level: &str, text: String) {
+    if let Ok(mut logs) = state.ui_logs.lock() {
+        if logs.len() >= 200 {
+            logs.remove(0);
+        }
+        logs.push(UiLog { text, level: level.to_string() });
+    }
+}
+
+#[tauri::command]
+pub fn take_ui_logs(state: tauri::State<'_, AppState>) -> Result<Vec<UiLog>, String> {
+    let mut logs = state.ui_logs.lock().map_err(|e| e.to_string())?;
+    Ok(std::mem::take(&mut *logs))
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

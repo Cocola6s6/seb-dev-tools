@@ -1,7 +1,7 @@
 use super::battery::{BatteryCtx, BatteryFrame};
 use super::client::{ClientCtx, Field, FrameLog};
 use super::dto::{ConnState, ControlType, DeployResult, EcuParam, SendResult};
-use super::settings::{AppConfig, GlobalSettings};
+use super::settings::{AppConfig, GlobalSettings, DEFAULT_EGG_URL};
 use super::ui::{LogEntry, LogLevel, Page, ToolboxMode};
 use super::util::now_hms;
 use crate::api;
@@ -142,6 +142,10 @@ impl AppCtx {
     }
 
     pub fn adopt_config(&self, cfg: AppConfig) {
+        let mut cfg = cfg;
+        if cfg.settings.egg_url.trim().is_empty() {
+            cfg.settings.egg_url = DEFAULT_EGG_URL.to_string();
+        }
         let current_version = env!("CARGO_PKG_VERSION");
         if cfg.last_seen_version != current_version {
             self.show_whats_new.set(true);

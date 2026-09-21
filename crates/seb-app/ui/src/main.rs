@@ -9,6 +9,7 @@ use components::{
     WhatsNewNotice,
 };
 use gloo_timers::future::TimeoutFuture;
+use wasm_bindgen::JsCast;
 use pages::{
     battery::BatteryPage, client::ClientPage, control::ControlPage, deploy::DeployPage,
     ecu::EcuPage, settings::SettingsPage,
@@ -19,7 +20,37 @@ use wasm_bindgen_futures::spawn_local;
 
 fn main() {
     console_error_panic_hook::set_once();
-    sycamore::render(App);
+    // 同一份 WASM 三个窗口共用，靠 hash 分流：
+    // #dock 是桌面悬浮工具条，#egg 是工具条点鸡蛋时铺满屏幕的那层动画
+    match web_sys::window()
+        .and_then(|w| w.location().hash().ok())
+        .unwrap_or_default()
+        .as_str()
+    {
+        "#dock" => {
+            mark_view("dock");
+            sycamore::render(components::Dock);
+        }
+        "#egg" => {
+            mark_view("egg");
+            sycamore::render(components::EggWindow);
+        }
+        _ => sycamore::render(App),
+    }
+}
+
+/// 这两个窗都是透明的，样式另走一套。html 也要标上：它自己有底色，
+/// 只管 body 的话透明区会是一层白蒙版
+fn mark_view(class: &str) {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    if let Some(html) = doc.document_element() {
+        let _ = html.class_list().add_1(class);
+    }
+    if let Some(body) = doc.body() {
+        let _ = body.class_list().add_1(class);
+    }
 }
 
 #[component]
@@ -110,6 +141,8 @@ fn App() -> View {
         ctx.log_info("就绪。可先进行「一键接入」将车辆接入内网，随后进行中控、ECU 与电池调试");
     });
 
+    setup_collapse_listener();
+
     spawn_local(async move {
         loop {
             TimeoutFuture::new(500).await;
@@ -120,6 +153,15 @@ fn App() -> View {
                 }
                 for f in poll.frames {
                     ctx.log_frame(&f.dir, &f.device_no, &f);
+                }
+            }
+            if let Ok(logs) = api::take_ui_logs().await {
+                for l in logs {
+                    if l.level == "error" {
+                        ctx.log_error(l.text);
+                    } else {
+                        ctx.log_info(l.text);
+                    }
                 }
             }
             if let Ok(bpoll) = api::battery_poll().await {
@@ -190,6 +232,54 @@ fn App() -> View {
             KnockEgg {}
             WhatsNewNotice {}
         }
+    }
+}
+
+fn setup_collapse_listener() {
+    let cb = wasm_bindgen::closure::Closure::<dyn FnMut(Option<f64>, Option<f64>)>::wrap(Box::new(
+        move |opt_x: Option<f64>, opt_y: Option<f64>| {
+            if let (Some(x), Some(y)) = (opt_x, opt_y) {
+                set_fold_target(x, y);
+            }
+            set_body_class("collapsing", true);
+            spawn_local(async move {
+                TimeoutFuture::new(240).await;
+                let _ = api::collapse_to_dock().await;
+                // 窗口已经不可见了才摘掉这个类，否则会看到它原地弹回来
+                set_body_class("collapsing", false);
+            });
+        },
+    ));
+    if let Some(w) = web_sys::window() {
+        let _ = js_sys::Reflect::set(
+            &w,
+            &wasm_bindgen::JsValue::from_str("__triggerCollapse"),
+            cb.as_ref().unchecked_ref(),
+        );
+        cb.forget();
+    }
+}
+
+fn set_body_class(class: &str, on: bool) {
+    let Some(body) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.body()) else {
+        return;
+    };
+    let list = body.class_list();
+    let _ = if on { list.add_1(class) } else { list.remove_1(class) };
+}
+
+/// 收起动画往哪儿飞：工具条中心相对主窗左上角的位置，交给 CSS 变量
+#[allow(dead_code)]
+fn set_fold_target(x: f64, y: f64) {
+    let Some(html) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.document_element())
+    else {
+        return;
+    };
+    if let Some(el) = html.dyn_ref::<web_sys::HtmlElement>() {
+        let _ = el.style().set_property("--fold-x", &format!("{x}px"));
+        let _ = el.style().set_property("--fold-y", &format!("{y}px"));
     }
 }
 

@@ -1,10 +1,20 @@
-use super::AppState;
+use super::{push_log, AppState};
 use seb_core::hosts::{self, HostsEnv};
 use tauri::State;
 
-/// 按 内网 → 外网 → 正式 轮换本地 hosts，返回切换后的环境名
+/// 按 内网 → 外网 → 正式 轮换本地 hosts，返回切换后的环境名。
+/// 日志在这里记而不是在前端：主窗和工具条都会调它，记在前端的话工具条那次看不见
 #[tauri::command]
 pub async fn switch_hosts(state: State<'_, AppState>) -> Result<String, String> {
+    let done = rotate(&state).await;
+    match &done {
+        Ok(env) => push_log(&state, "info", format!("本地 hosts 已切到{env}环境")),
+        Err(e) => push_log(&state, "error", format!("【错误】切换 hosts 失败: {e}")),
+    }
+    done
+}
+
+async fn rotate(state: &AppState) -> Result<String, String> {
     let sets = {
         let publisher = state.publisher.lock().await;
         publisher.config().settings.clone()
@@ -37,6 +47,24 @@ pub async fn switch_hosts(state: State<'_, AppState>) -> Result<String, String> 
         .map_err(|e| format!("写入 hosts 失败: {e}"))??;
 
     Ok(next.label().to_string())
+}
+
+/// 当前 hosts 指向哪个环境，认不出来就是"未知"
+#[tauri::command]
+pub async fn hosts_current(state: State<'_, AppState>) -> Result<String, String> {
+    let sets = {
+        let publisher = state.publisher.lock().await;
+        publisher.config().settings.clone()
+    };
+    let text = std::fs::read_to_string(hosts::hosts_path()).unwrap_or_default();
+    Ok(hosts::detect(
+        hosts::managed_block(&text),
+        &sets.hosts_inner,
+        &sets.hosts_uat,
+        &sets.hosts_prod,
+    )
+    .map(|env| env.label().to_string())
+    .unwrap_or_else(|| "未知".to_string()))
 }
 
 /// hosts 当前能不能直接写：能写就不用再弹密码

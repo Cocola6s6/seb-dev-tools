@@ -48,6 +48,13 @@ pub fn WhatsNewNotice() -> View {
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
+                                span(class="whats-new-label") { "增加功能条" }
+                                "：主页面收起时优雅折叠至桌面置顶悬浮功能条，集成快捷扫码、Hosts 切换与快速唤醒主窗口。"
+                            }
+                        }
+                        div(class="whats-new-item") {
+                            span(class="whats-new-bullet") {}
+                            div(class="whats-new-text") {
                                 span(class="whats-new-label") { "报文解析" }
                                 "：完整解析二进制报文的中台语义与字节映射，支持搜索匹配与未展开行即时高亮。"
                             }

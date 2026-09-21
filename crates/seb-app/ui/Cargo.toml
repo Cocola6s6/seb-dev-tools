@@ -1,6 +1,6 @@
 [package]
 name = "seb-ui"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 
 [[bin]]
@@ -12,7 +12,7 @@ sycamore             = { version = "0.9", features = ["web"] }
 wasm-bindgen         = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys               = "0.3"
-web-sys              = { version = "0.3", features = ["Window", "Document", "Element", "Event", "EventTarget", "HtmlInputElement", "HtmlSelectElement", "Navigator", "Clipboard", "KeyboardEvent", "DomTokenList", "DomRect"] }
+web-sys              = { version = "0.3", features = ["Window", "Document", "Element", "Event", "EventTarget", "HtmlInputElement", "HtmlSelectElement", "Navigator", "Clipboard", "KeyboardEvent", "DomTokenList", "DomRect", "Location", "HtmlElement", "CssStyleDeclaration", "VisibilityState", "MouseEvent"] }
 serde                = { version = "1", features = ["derive"] }
 serde_json           = "1"
 serde-wasm-bindgen   = "0.6"

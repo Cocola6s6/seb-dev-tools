@@ -1897,6 +1897,219 @@
       color: var(--text);
       border-color: #cbd5e1;
     }
+
+    .collapse-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      color: var(--muted);
+      background: rgba(255, 255, 255, .82);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(16, 24, 40, .03);
+      transition: all .15s ease;
+    }
+    .collapse-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent-2);
+    }
+    .collapse-btn:active { transform: scale(.9); }
+
+    @keyframes app-fold {
+      0% {
+        opacity: 1;
+        transform: scale(1) translate3d(0, 0, 0);
+      }
+      22% {
+        opacity: .94;
+        transform: scale(.96) translate3d(0, 0, 0);
+      }
+      100% {
+        opacity: 0;
+        transform: scale(.86) translate3d(0, 0, 0);
+      }
+    }
+    body.collapsing {
+      background: transparent !important;
+      overflow: hidden !important;
+    }
+    body.collapsing .app {
+      transform-origin: var(--fold-x, 50%) var(--fold-y, 50%);
+      animation: app-fold 0.24s cubic-bezier(0.22, 0.8, 0.22, 1) forwards;
+      pointer-events: none;
+      will-change: transform, opacity;
+    }
+    body.collapsing .toast-wrap,
+    body.collapsing .knock-layer { display: none; }
+
+    html.dock, body.dock, html.egg, body.egg {
+      margin: 0;
+      background: transparent;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .dock-root {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .dock-strip {
+      position: absolute;
+      top: 0;
+      width: 76px;
+      height: 100%;
+      padding: 10px 0;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: rgba(255, 255, 255, .92);
+      backdrop-filter: saturate(180%) blur(14px);
+      -webkit-backdrop-filter: saturate(180%) blur(14px);
+      border: 1px solid var(--line);
+      border-radius: 38px;
+    }
+    .dock-root.right .dock-strip { left: 0; }
+    .dock-root.left  .dock-strip { right: 0; }
+
+    .dock-item {
+      width: 76px;
+      height: 66px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      cursor: pointer;
+    }
+    .dock-icon {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      color: var(--text-2);
+      background: #f1f4f9;
+      border: 1.5px solid transparent;
+      border-radius: 50%;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+    .dock-item:hover .dock-icon { background: #e7edf8; color: var(--text); }
+    .dock-item:active .dock-icon { background: #dbe4f5; }
+    .dock-item.active .dock-icon {
+      color: var(--accent);
+      background: var(--glow);
+      border-color: var(--accent);
+    }
+    .dock-label {
+      font-size: 10px;
+      line-height: 1;
+      color: var(--muted);
+    }
+    .dock-item:hover .dock-label,
+    .dock-item.active .dock-label { color: var(--text-2); }
+
+    .dock-close {
+      margin-top: auto;
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      color: #b6bdc9;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .dock-close:hover { color: var(--error); background: #fdeef0; }
+
+    @keyframes dock-card-in {
+      from { opacity: 0; transform: scale(0.96); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    .dock-card {
+      position: absolute;
+      width: 280px;
+      box-sizing: border-box;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+      animation: dock-card-in 0.15s cubic-bezier(0.2, 0.9, 0.2, 1.05) forwards;
+      transform-origin: center left;
+    }
+    .dock-root.right .dock-card { left: 82px; transform-origin: center left; }
+    .dock-root.left  .dock-card { right: 82px; transform-origin: center right; }
+    .dock-arrow {
+      position: absolute;
+      width: 0;
+      height: 0;
+      border: 7px solid transparent;
+    }
+    .dock-root.right .dock-arrow { left: -14px; border-right-color: var(--surface); }
+    .dock-root.left  .dock-arrow { right: -14px; border-left-color: var(--surface); }
+
+    .dock-tabs {
+      display: inline-flex;
+      padding: 2px;
+      gap: 2px;
+      background: #eef2f8;
+      border-radius: 999px;
+    }
+    .dock-tab {
+      padding: 3px 14px;
+      font-size: 11px;
+      color: var(--text-2);
+      background: transparent;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .dock-tab.active {
+      color: var(--accent);
+      background: var(--surface);
+      box-shadow: 0 1px 3px rgba(22, 24, 29, .12);
+    }
+
+    .dock-qr {
+      width: 164px;
+      height: 164px;
+      background: #fff;
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .dock-no {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-family: Menlo, "SF Mono", monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .dock-copy {
+      padding: 2px 8px;
+      font-size: 10px;
+      color: var(--text-2);
+      background: #eef2f8;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .dock-copy:hover { color: var(--accent); background: var(--glow); }
+
   </style>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

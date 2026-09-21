@@ -101,6 +101,85 @@ pub async fn switch_hosts() -> Result<String, String> {
     invoke("switch_hosts", Empty {}).await
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EggArgs {
+    on: bool,
+}
+
+pub async fn dock_egg(on: bool) -> Result<(), String> {
+    invoke_void("dock_egg", EggArgs { on }).await
+}
+
+#[derive(Deserialize)]
+pub struct UiLog {
+    pub text: String,
+    pub level: String,
+}
+
+pub async fn take_ui_logs() -> Result<Vec<UiLog>, String> {
+    invoke("take_ui_logs", Empty {}).await
+}
+
+pub async fn hosts_current() -> Result<String, String> {
+    invoke("hosts_current", Empty {}).await
+}
+
+pub async fn collapse_to_dock() -> Result<(), String> {
+    invoke_void("collapse_to_dock", Empty {}).await
+}
+
+pub async fn dock_expand(expanded: bool) -> Result<String, String> {
+    #[derive(Serialize)]
+    struct A {
+        expanded: bool,
+    }
+    invoke("dock_expand", A { expanded }).await
+}
+
+pub async fn hide_dock() -> Result<(), String> {
+    invoke_void("hide_dock", Empty {}).await
+}
+
+pub async fn dock_drag() -> Result<(), String> {
+    invoke_void("dock_drag", Empty {}).await
+}
+
+#[allow(dead_code)]
+pub async fn dock_anchor() -> Result<(f64, f64), String> {
+    invoke("dock_anchor", Empty {}).await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DockQrSelectionArgs<'a> {
+    bike_no: &'a str,
+    battery_no: &'a str,
+}
+
+#[derive(Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DockQrSelection {
+    pub bike_no: String,
+    pub battery_no: String,
+}
+
+pub async fn set_dock_qr_selection(bike_no: &str, battery_no: &str) -> Result<(), String> {
+    invoke_void(
+        "set_dock_qr_selection",
+        DockQrSelectionArgs { bike_no, battery_no },
+    )
+    .await
+}
+
+pub async fn get_dock_qr_selection() -> Result<DockQrSelection, String> {
+    invoke("get_dock_qr_selection", Empty {}).await
+}
+
+pub async fn show_main() -> Result<(), String> {
+    invoke_void("show_main", Empty {}).await
+}
+
 pub async fn hosts_writable() -> Result<bool, String> {
     invoke("hosts_writable", Empty {}).await
 }

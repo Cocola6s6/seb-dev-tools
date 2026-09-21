@@ -49,6 +49,7 @@ pub fn ClientPage() -> View {
     let gw_prod = create_memo(move || gw_or(ctx.global_settings.get_clone().client.default_prod_gw, GW_PROD));
     let map_picker_open = create_signal(false);
     let battery_dropdown_open = create_signal(false);
+    let qr_selection_seq = Rc::new(Cell::new(0u32));
 
     // 表单任一项变动就把配置同步给后台；owner 为空说明正在切设备，这一轮不能写。
     // 配置要落盘，所以连续输入时只认最后一次
@@ -96,36 +97,38 @@ pub fn ClientPage() -> View {
             return;
         }
         let bike_no = map.get(&no).cloned().unwrap_or_default().trim().to_string();
-        if bike_no.is_empty() {
-            return;
-        }
-        let cur = untrack(move || c.battery_no.get_clone()).trim().to_string();
-
-        let bound = options
-            .iter()
-            .find(|b| b.bound_bike_no.as_deref().map(str::trim) == Some(bike_no.as_str()));
+        let bound = if bike_no.is_empty() {
+            None
+        } else {
+            options
+                .iter()
+                .find(|b| b.bound_bike_no.as_deref().map(str::trim) == Some(bike_no.as_str()))
+        };
         if let Some(b) = bound {
-            if cur != b.battery_no {
+            if untrack(move || c.battery_no.get_clone().trim().to_string()) != b.battery_no {
                 c.battery_no.set(b.battery_no.clone());
             }
             return;
         }
 
-        let cur_is_free = !cur.is_empty()
-            && options
-                .iter()
-                .any(|b| b.battery_no == cur && b.bound_bike_no.is_none());
-        if cur_is_free {
-            return;
-        }
-        match options.iter().find(|b| b.bound_bike_no.is_none()) {
-            Some(free) => c.battery_no.set(free.battery_no.clone()),
-            None => ctx.log_client(format!("【警告】{no} 没有可用的空闲电池"), LogLevel::Warn),
+        if let Some(free) = options.iter().find(|b| b.bound_bike_no.is_none()) {
+            c.battery_no.set(free.battery_no.clone());
+        } else {
+            c.battery_no.set(String::new());
+            ctx.log_client(format!("【警告】{no} 没有可用的空闲电池"), LogLevel::Warn);
         }
     });
 
     let ordered_batteries = create_memo(move || {
-        let cur_bike = ctx.bike_no.get_clone().trim().to_string();
+        let selected_no = c.selected.get_clone();
+        let cur_bike = c
+            .bike_map
+            .get_clone()
+            .get(&selected_no)
+            .cloned()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
         let raw = c.battery_options.get_clone();
         let mut list: Vec<BatteryDropdownItem> = raw
             .into_iter()
@@ -173,32 +176,44 @@ pub fn ClientPage() -> View {
     create_effect(move || {
         let list = c.selected_list();
         let last_no = list.last().cloned().unwrap_or_else(|| c.selected.get_clone());
+        let map = c.bike_map.get_clone();
+        let bike_no = map.get(&last_no).cloned().unwrap_or_default();
+        let battery_no = c.battery_no.get_clone().trim().to_string();
+        let qr_bike_no = bike_no.clone();
+        let qr_selection_seq = qr_selection_seq.clone();
+        let seq = qr_selection_seq.get() + 1;
+        qr_selection_seq.set(seq);
+        spawn_local(async move {
+            TimeoutFuture::new(50).await;
+            if qr_selection_seq.get() == seq {
+                if let Err(e) = api::set_dock_qr_selection(&qr_bike_no, &battery_no).await {
+                    ctx.log_client(format!("二维码同步失败: {e}"), LogLevel::Error);
+                }
+            }
+        });
         if last_no.is_empty() {
             return;
         }
         ctx.device_no.set(last_no.clone());
-        let map = c.bike_map.get_clone();
-        if let Some(bike) = map.get(&last_no) {
-            if !bike.trim().is_empty() {
-                ctx.bike_no.set(bike.clone());
-            }
-        } else {
-            let last_no = last_no.clone();
-            spawn_local(async move {
-                if let Ok(m) = api::client_get_bike_nos(vec![last_no.clone()]).await {
-                    if let Some(bike) = m.get(&last_no) {
-                        if !bike.trim().is_empty() {
-                            ctx.bike_no.set(bike.clone());
-                        }
-                    }
-                    if !m.is_empty() {
-                        let mut cur = c.bike_map.get_clone();
-                        cur.extend(m);
-                        c.bike_map.set(cur);
+        ctx.bike_no.set(bike_no.clone());
+        if !bike_no.trim().is_empty() {
+            return;
+        }
+        let last_no = last_no.clone();
+        spawn_local(async move {
+            if let Ok(m) = api::client_get_bike_nos(vec![last_no.clone()]).await {
+                if let Some(bike) = m.get(&last_no) {
+                    if !bike.trim().is_empty() {
+                        ctx.bike_no.set(bike.clone());
                     }
                 }
-            });
-        }
+                if !m.is_empty() {
+                    let mut cur = c.bike_map.get_clone();
+                    cur.extend(m);
+                    c.bike_map.set(cur);
+                }
+            }
+        });
     });
 
     let conn_btn_text = create_memo(move || {

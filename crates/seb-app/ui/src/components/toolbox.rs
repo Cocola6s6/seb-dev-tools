@@ -14,6 +14,36 @@ const EGG_KNOCK_MS: u32 = 2600;
 
 /// 百宝箱三击敲鸡蛋。挂在根上渲染：顶栏 .nav 的 backdrop-filter 会困住固定定位的遮罩
 #[component]
+/// 工具条点鸡蛋时弹出的整屏窗口：和主窗共用 KnockEgg，演完自己关掉
+#[component]
+pub fn EggWindow() -> View {
+    let ctx = AppCtx::new();
+    provide_context(ctx);
+    let started = create_signal(false);
+
+    spawn_local(async move {
+        if let Ok(cfg) = api::get_config().await {
+            ctx.adopt_config(cfg);
+        }
+        ctx.egg.set(true);
+    });
+
+    // 蛋敲完、或者用户点了一下，KnockEgg 会把 egg 置回 false，这时候这个窗就没用了。
+    // started 是为了挡住 effect 第一次跑（那会儿 egg 还是 false），别刚建好就把自己关了
+    create_effect(move || {
+        if ctx.egg.get() {
+            started.set(true);
+        } else if started.get() {
+            spawn_local(async move {
+                let _ = api::dock_egg(false).await;
+            });
+        }
+    });
+
+    view! { KnockEgg {} }
+}
+
+#[component]
 pub fn KnockEgg() -> View {
     let ctx = use_context::<AppCtx>();
     let ready = create_signal(false);
@@ -89,7 +119,7 @@ pub fn KnockEgg() -> View {
 }
 
 /// 鸡蛋框里一行一个地址，每次随机摸一个
-fn pick_egg(box_text: &str) -> String {
+pub(crate) fn pick_egg(box_text: &str) -> String {
     let list: Vec<&str> = box_text
         .lines()
         .map(str::trim)
@@ -215,14 +245,9 @@ pub fn ToolboxNavButton() -> View {
                             TripleClickAction::Hosts => {
                                 ctx.toast("正在切换本地 hosts");
                                 match api::switch_hosts().await {
-                                    Ok(env) => {
-                                        ctx.toast(format!("hosts 已切到{env}"));
-                                        ctx.log_info(format!("本地 hosts 已切到{env}环境"));
-                                    }
-                                    Err(e) => {
-                                        ctx.toast("hosts 切换失败");
-                                        ctx.log_error(format!("【错误】切换 hosts 失败: {e}"));
-                                    }
+                                    // 日志由命令层统一记，这里只管本窗口的提示
+                                    Ok(env) => ctx.toast(format!("hosts 已切到{env}")),
+                                    Err(_) => ctx.toast("hosts 切换失败"),
                                 }
                             }
                         }
@@ -296,8 +321,6 @@ pub fn ToolboxNavButton() -> View {
             // 弹层展开时二维码就在正下方，提示条得让位
             (if open.get() && ctx.toolbox_mode.get() == ToolboxMode::QrCode {
                 view! {
-                    div(class="popover-backdrop", on:click=move |_| open.set(false)) {}
-
                     div(class="nav-qr-popover") {
                         div(class="nav-qr-head") {
                             span { (if is_battery() { "电池二维码" } else { "车辆二维码" }) }
