@@ -27,9 +27,10 @@ pub fn InlineMapPicker(
 
     spawn_local(async move {
         TimeoutFuture::new(50).await;
+        let custom_input_init = custom_input;
         api::init_map_picker(container_id, &initial_val, move |picked| {
             target_coord.set(picked.clone());
-            custom_input.set(picked);
+            custom_input_init.set(picked);
         });
     });
 
@@ -85,51 +86,54 @@ pub fn InlineMapPicker(
     };
 
     view! {
-        div(class="inline-map-card") {
-            div(class="inline-map-head") {
-                div(class="inline-map-title") {
-                    span { "位置" }
-                    input(
-                        r#type="text",
-                        placeholder="经度,纬度 (回车跳转)",
-                        bind:value=custom_input,
-                        on:keydown=move |ev: web_sys::KeyboardEvent| {
-                            if ev.key() == "Enter" {
-                                jump_custom();
-                            }
-                        },
-                        on:blur=move |_| jump_custom()
-                    )
-                }
-                div(class="inline-map-toolbar") {
-                    div(class="map-preset-bar") {
-                        span(style="font-size:11px;color:var(--muted);") { "快捷城市:" }
-                        Indexed(
-                            list=CITY_PRESETS.to_vec(),
-                            view=move |(name, lng, lat): (&'static str, f64, f64)| {
-                                view! {
-                                    button(class="map-preset-btn", on:click=move |_| {
-                                        let str_val = format!("{:.6},{:.6}", lng, lat);
-                                        api::jump_map_coord(lng, lat);
-                                        target_coord.set(str_val.clone());
-                                        custom_input.set(str_val);
-                                    }) { (name) }
+        div(class="field inline-map-field") {
+            label { "位置" }
+            div(class="inline-map-card") {
+                div(class="inline-map-head") {
+                    div(class="inline-map-input-group") {
+                        input(
+                            r#type="text",
+                            class="inline-map-input",
+                            placeholder="经度,纬度 (回车或失焦跳转)",
+                            bind:value=custom_input,
+                            on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                if ev.key() == "Enter" {
+                                    jump_custom();
                                 }
-                            }
+                            },
+                            on:blur=move |_| jump_custom()
                         )
                     }
-                    button(
-                        class="env-chip inner active",
-                        title="点击获取当前物理位置或IP定位",
-                        disabled=locating.get(),
-                        on:click=locate_my_pos
-                    ) {
-                        (if locating.get() { "定位中..." } else { "当前定位" })
+                    div(class="inline-map-toolbar") {
+                        div(class="map-preset-bar") {
+                            span(class="map-preset-title") { "快捷城市:" }
+                            Indexed(
+                                list=CITY_PRESETS.to_vec(),
+                                view=move |(name, lng, lat): (&'static str, f64, f64)| {
+                                    view! {
+                                        button(class="map-preset-btn", on:click=move |_| {
+                                            let str_val = format!("{:.6},{:.6}", lng, lat);
+                                            api::jump_map_coord(lng, lat);
+                                            target_coord.set(str_val.clone());
+                                            custom_input.set(str_val);
+                                        }) { (name) }
+                                    }
+                                }
+                            )
+                        }
+                        button(
+                            class="env-chip inner active",
+                            title="点击获取当前物理位置或IP定位",
+                            disabled=locating.get(),
+                            on:click=locate_my_pos
+                        ) {
+                            (if locating.get() { "定位中..." } else { "当前定位" })
+                        }
                     }
                 }
-            }
 
-            div(id=container_id, class="inline-map-container") {}
+                div(id=container_id, class="inline-map-container") {}
+            }
         }
     }
 }

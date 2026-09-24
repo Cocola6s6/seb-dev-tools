@@ -636,13 +636,25 @@ pub fn ClientPage() -> View {
                                 }
                                 Field(label="偏向角", value=c.deflection_angle)
                                 Field(label="速度", value=c.speed)
+                                div(class="field") {
+                                    label { "运动状态" }
+                                    select(on:change=move |ev| {
+                                        let val = select_value(ev);
+                                        c.motion.set(val == "true");
+                                    }) {
+                                        option(value="false", selected=!c.motion.get()) { "静止" }
+                                        option(value="true", selected=c.motion.get()) { "运动中" }
+                                    }
+                                }
                             }
-                            div(class="row checks", style="margin-top:16px; margin-bottom:18px;") {
-                                Check(label="车辆运动状态（运动中）", checked=c.motion)
-                                Check(label="头盔锁状态（已解锁）", checked=c.helmet_lock_unlocked)
-                                Check(label="头盔在位状态（在位）", checked=c.helmet_present)
-                                Check(label="尾箱在位状态（加锁/在位）", checked=c.trunk_latch)
-                                Check(label="供电状态（供电）", checked=c.acc_on)
+                            div(class="field hardware-status-group") {
+                                label { "硬件状态" }
+                                div(class="hardware-status-bar") {
+                                    Check(label="头盔锁（已解锁）", checked=c.helmet_lock_unlocked)
+                                    Check(label="头盔在位", checked=c.helmet_present)
+                                    Check(label="尾箱在位（加锁）", checked=c.trunk_latch)
+                                    Check(label="ACC供电", checked=c.acc_on)
+                                }
                             }
                             InlineMapPicker(container_id="client-inline-map", target_coord=c.coordinates)
                             div(class="card-actions") {

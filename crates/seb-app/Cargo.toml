@@ -1,6 +1,6 @@
 [package]
 name = "seb-app"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 description = "共享电单车中控调试与 ECU 配置发包工具（Tauri + Sycamore）"
 license = "MIT"
