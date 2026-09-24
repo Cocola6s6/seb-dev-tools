@@ -2405,11 +2405,20 @@
           lang: 'zh_cn'
         });
 
+        const markerContent = document.createElement('div');
+        markerContent.className = 'amap-custom-marker';
+        markerContent.style.width = '28px';
+        markerContent.style.height = '38px';
+        markerContent.style.cursor = 'move';
+        markerContent.style.userSelect = 'none';
+        markerContent.innerHTML = '<svg viewBox="0 0 28 38" width="28" height="38" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 3px 6px rgba(15,23,42,0.38)); display: block;"><path d="M14 0C6.268 0 0 6.268 0 14C0 24.5 14 38 14 38C14 38 28 24.5 28 14C28 6.268 21.732 0 14 0Z" fill="#0d9488"/><circle cx="14" cy="13.5" r="5.5" fill="#ffffff"/><circle cx="14" cy="13.5" r="2.5" fill="#0d9488"/></svg>';
+
         const marker = new AMap.Marker({
           position: new AMap.LngLat(lng, lat),
+          content: markerContent,
+          offset: new AMap.Pixel(-14, -38),
           draggable: true,
-          cursor: 'move',
-          anchor: 'bottom-center'
+          cursor: 'move'
         });
         marker.setMap(map);
 
@@ -2474,7 +2483,8 @@
 
     window.jumpMapCoord = function(lng, lat) {
       if (window._mapInstances) {
-        Object.values(window._mapInstances).forEach(function(item) {
+        Object.keys(window._mapInstances).forEach(function(containerId) {
+          const item = window._mapInstances[containerId];
           if (!item || !item.map) return;
           try {
             const pos = new AMap.LngLat(lng, lat);
