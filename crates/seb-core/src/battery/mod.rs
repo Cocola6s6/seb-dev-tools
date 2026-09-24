@@ -20,7 +20,7 @@ pub const DEFAULT_BATTERY_PORT: u16 = 32402;
 
 pub const DEFAULT_BATTERY_NO: &str = "CMAH030799497009";
 pub const DEFAULT_ICCID: &str = "89860409081870640660";
-pub const DEFAULT_COORDINATES: &str = "108.38,22.77";
+pub const DEFAULT_COORDINATES: &str = "108.375256,22.767133";
 
 const DEFAULT_PING_SECS: u64 = 60;
 const MAX_BUFFERED: usize = 500;
@@ -420,6 +420,23 @@ impl BatteryFleet {
             .find(|l| l.battery_no() == battery_no)
             .cloned()
             .ok_or_else(|| format!("电池 {battery_no} 不在模拟清单里"))
+    }
+
+    pub fn rename(&self, old_no: &str, new_no: &str) -> Result<(Arc<BatteryLink>, bool), String> {
+        let links = self.links.lock().unwrap();
+        if links.iter().any(|l| l.battery_no() == new_no && l.battery_no() != old_no) {
+            return Err(format!("电池编号 {new_no} 已存在"));
+        }
+        let link = links
+            .iter()
+            .find(|l| l.battery_no() == old_no)
+            .cloned()
+            .ok_or_else(|| format!("电池 {old_no} 不在模拟清单里"))?;
+
+        let mut cfg = link.config();
+        cfg.battery_no = new_no.to_string();
+        let moved = link.set_config(cfg);
+        Ok((link, moved))
     }
 
     pub fn remove(&self, battery_no: &str) -> Option<Arc<BatteryLink>> {

@@ -1,5 +1,5 @@
 use crate::state::{
-    inner_host, AppCtx,
+    inner_host, normalize_ecu_no, AppCtx,
 };
 use sycamore::prelude::*;
 
@@ -7,6 +7,15 @@ use sycamore::prelude::*;
 pub fn DeviceBar() -> View {
     let ctx = use_context::<AppCtx>();
     let open = create_signal(false);
+
+    let normalize_and_refresh = move || {
+        let cur = ctx.device_no.get_clone();
+        let norm = normalize_ecu_no(&cur);
+        if norm != cur {
+            ctx.device_no.set(norm);
+        }
+        ctx.refresh_instance(true);
+    };
 
     let inner_devices = create_memo(move || {
         let host = inner_host(&ctx.global_settings.get_clone());
@@ -38,10 +47,11 @@ pub fn DeviceBar() -> View {
                         r#type="text",
                         placeholder="输入中控设备序列号 (如 799497080)",
                         bind:value=ctx.device_no,
-                        on:change=move |_| ctx.refresh_instance(true),
+                        on:blur=move |_| normalize_and_refresh(),
+                        on:change=move |_| normalize_and_refresh(),
                         on:keydown=move |ev: web_sys::KeyboardEvent| {
                             if ev.key() == "Enter" {
-                                ctx.refresh_instance(true);
+                                normalize_and_refresh();
                             } else if ev.key() == "Tab" && !ev.shift_key() && ctx.device_no.get_clone().trim().is_empty() {
                                 ctx.device_no.set("799497080".to_string());
                                 ctx.refresh_instance(true);

@@ -84,3 +84,16 @@ pub fn now_hms() -> String {
         d.get_seconds()
     )
 }
+
+/// ECU 序列号标准为 9 位数字字符，不够 9 位时左侧自动补 0（如 7 位补 00 前缀）
+pub fn normalize_ecu_no(s: &str) -> String {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.len() < 9 {
+        format!("{:0>9}", trimmed)
+    } else {
+        trimmed.to_string()
+    }
+}

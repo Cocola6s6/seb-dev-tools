@@ -93,9 +93,10 @@ pub fn client_devices(state: State<'_, AppState>) -> Vec<DeviceState> {
 #[tauri::command]
 pub async fn client_update_device(
     state: State<'_, AppState>,
-    config: DeviceConfig,
+    mut config: DeviceConfig,
 ) -> Result<Vec<DeviceState>, String> {
-    if config.device_no.trim().is_empty() {
+    config.device_no = seb_core::normalize_ecu_no(&config.device_no);
+    if config.device_no.is_empty() {
         return Err("中控设备序列号不能为空".to_string());
     }
     let (link, gateway_moved) = state.devices.upsert(config);
@@ -109,10 +110,34 @@ pub async fn client_update_device(
 }
 
 #[tauri::command]
+pub async fn client_rename_device(
+    state: State<'_, AppState>,
+    old_no: String,
+    new_no: String,
+) -> Result<Vec<DeviceState>, String> {
+    let old_no = seb_core::normalize_ecu_no(&old_no);
+    let new_no = seb_core::normalize_ecu_no(&new_no);
+    if new_no.is_empty() {
+        return Err("中控设备序列号不能为空".to_string());
+    }
+    if old_no == new_no {
+        return Ok(state.devices.states());
+    }
+    let (link, _) = state.devices.rename(&old_no, &new_no)?;
+    if link.connected() {
+        link.note(format!("设备序列号已变更为 {new_no}，自动断开连接"));
+        link.disconnect().await;
+    }
+    persist(&state).await;
+    Ok(state.devices.states())
+}
+
+#[tauri::command]
 pub async fn client_remove_device(
     state: State<'_, AppState>,
     device_no: String,
 ) -> Result<Vec<DeviceState>, String> {
+    let device_no = seb_core::normalize_ecu_no(&device_no);
     if let Some(link) = state.devices.remove(&device_no) {
         link.disconnect().await;
     }
@@ -125,6 +150,7 @@ pub async fn client_connect(
     state: State<'_, AppState>,
     device_no: String,
 ) -> Result<DeviceState, String> {
+    let device_no = seb_core::normalize_ecu_no(&device_no);
     let link = state.devices.get(&device_no)?;
     link.connect().await?;
     Ok(link.state())
@@ -135,6 +161,7 @@ pub async fn client_disconnect(
     state: State<'_, AppState>,
     device_no: String,
 ) -> Result<DeviceState, String> {
+    let device_no = seb_core::normalize_ecu_no(&device_no);
     let link = state.devices.get(&device_no)?;
     link.disconnect().await;
     Ok(link.state())
@@ -166,11 +193,13 @@ pub async fn client_send_location(
     state: State<'_, AppState>,
     device_no: String,
 ) -> Result<(), String> {
+    let device_no = seb_core::normalize_ecu_no(&device_no);
     state.devices.get(&device_no)?.send_location().await
 }
 
 #[tauri::command]
 pub async fn client_send_bms(state: State<'_, AppState>, device_no: String) -> Result<(), String> {
+    let device_no = seb_core::normalize_ecu_no(&device_no);
     state.devices.get(&device_no)?.send_bms().await
 }
 
@@ -181,6 +210,7 @@ pub async fn client_send_alarm(
     alarm_type: u8,
     label: String,
 ) -> Result<(), String> {
+    let device_no = seb_core::normalize_ecu_no(&device_no);
     state
         .devices
         .get(&device_no)?
@@ -190,6 +220,7 @@ pub async fn client_send_alarm(
 
 #[tauri::command]
 pub async fn client_send_ping(state: State<'_, AppState>, device_no: String) -> Result<(), String> {
+    let device_no = seb_core::normalize_ecu_no(&device_no);
     state.devices.get(&device_no)?.send_ping().await
 }
 
@@ -200,6 +231,7 @@ pub async fn client_send_reply(
     msg_id: Option<String>,
     success: bool,
 ) -> Result<(), String> {
+    let device_no = seb_core::normalize_ecu_no(&device_no);
     state
         .devices
         .get(&device_no)?
@@ -209,15 +241,23 @@ pub async fn client_send_reply(
 
 #[tauri::command]
 pub async fn client_get_bike_nos(device_nos: Vec<String>) -> std::collections::HashMap<String, String> {
-    let mut map = seb_core::db::batch_find_bike_nos_by_ecus(&seb_core::config::mysql(), &device_nos).await;
-    for no in &device_nos {
-        let no = no.trim();
-        if !no.is_empty() && !map.contains_key(no) {
-            let key = format!("{}{no}", seb_core::redis::DEVICE_SERIAL_NO_PREFIX);
-            if let Ok(Some(bike_no)) = seb_core::redis::get(&key).await {
-                let bike_no = bike_no.trim().to_string();
-                if !bike_no.is_empty() {
-                    map.insert(no.to_string(), bike_no);
+    let norm_nos: Vec<String> = device_nos.iter().map(|s| seb_core::normalize_ecu_no(s)).collect();
+    let mut map = seb_core::db::batch_find_bike_nos_by_ecus(&seb_core::config::mysql(), &norm_nos).await;
+    for (orig, norm) in device_nos.iter().zip(norm_nos.iter()) {
+        let norm_s = norm.as_str();
+        if !norm_s.is_empty() {
+            if let Some(bike) = map.get(norm_s).cloned() {
+                if orig != norm_s {
+                    map.insert(orig.clone(), bike);
+                }
+            } else {
+                let key = format!("{}{norm_s}", seb_core::redis::DEVICE_SERIAL_NO_PREFIX);
+                if let Ok(Some(bike_no)) = seb_core::redis::get(&key).await {
+                    let bike_no = bike_no.trim().to_string();
+                    if !bike_no.is_empty() {
+                        map.insert(norm_s.to_string(), bike_no.clone());
+                        map.insert(orig.clone(), bike_no);
+                    }
                 }
             }
         }

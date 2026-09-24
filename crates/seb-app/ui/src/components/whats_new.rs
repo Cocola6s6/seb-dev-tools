@@ -48,43 +48,15 @@ pub fn WhatsNewNotice() -> View {
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "增加功能条" }
-                                "：主页面收起时优雅折叠至桌面置顶悬浮功能条，集成快捷扫码、Hosts 切换与快速唤醒主窗口。"
+                                span(class="whats-new-label") { "修改设备号" }
+                                "：左侧设备可以点小图标直接改序列号，改完敲回车就能保存。"
                             }
                         }
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "报文解析" }
-                                "：完整解析二进制报文的中台语义与字节映射，支持搜索匹配与未展开行即时高亮。"
-                            }
-                        }
-                        div(class="whats-new-item") {
-                            span(class="whats-new-bullet") {}
-                            div(class="whats-new-text") {
-                                span(class="whats-new-label") { "百宝箱快捷方式" }
-                                "：单击展开二维码，双击切换全局/系统配置，三击敲鸡蛋或在内网/外网/正式之间切换 hosts。"
-                            }
-                        }
-                        div(class="whats-new-item") {
-                            span(class="whats-new-bullet") {}
-                            div(class="whats-new-text") {
-                                span(class="whats-new-label") { "电池客户端与全局配置" }
-                                "：新增电池客户端调试能力，并增加全局配置页统一管理报文与路由参数。"
-                            }
-                        }
-                        div(class="whats-new-item") {
-                            span(class="whats-new-bullet") {}
-                            div(class="whats-new-text") {
-                                span(class="whats-new-label") { "设备环境区分" }
-                                "：设备列表清晰区分内网/外网/正式等网关环境，顶栏在线状态按环境精准分流。"
-                            }
-                        }
-                        div(class="whats-new-item") {
-                            span(class="whats-new-bullet") {}
-                            div(class="whats-new-text") {
-                                span(class="whats-new-label") { "客户端批量操作" }
-                                "：中控与电池客户端均支持多设备管理，提供一键批量上线、下线与状态同步。"
+                                span(class="whats-new-label") { "高德地图选点" }
+                                "：自带高德地图，可以在地图上直接戳位置选点，也支持输入经纬度和切换快捷城市。"
                             }
                         }
                     }

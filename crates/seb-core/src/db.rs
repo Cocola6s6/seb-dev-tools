@@ -207,7 +207,7 @@ pub async fn batch_find_bike_nos_by_ecus(
     let mut map = std::collections::HashMap::new();
     let valid_ecus: Vec<String> = ecu_nos
         .iter()
-        .map(|s| s.trim().to_string())
+        .map(|s| crate::device::normalize_ecu_no(s))
         .filter(|s| !s.is_empty())
         .collect();
     if valid_ecus.is_empty() {
@@ -281,7 +281,8 @@ pub async fn batch_find_bike_nos_by_ecus(
 
 pub async fn deploy(cfg: &MysqlConfig, req: &DeployRequest) -> Result<DeployResult, String> {
     let bike_no = req.bike_no.trim();
-    let ecu_no = req.ecu_no.trim();
+    let ecu_no_norm = crate::device::normalize_ecu_no(&req.ecu_no);
+    let ecu_no = ecu_no_norm.as_str();
     let battery_no = req.battery_no.trim();
     if bike_no.is_empty() {
         return Err("车辆编号 (bikeNo) 不能为空".to_string());

@@ -21,6 +21,6 @@ pub use settings::{
 };
 pub use ui::{LogEntry, LogLevel, Page, ToolboxMode};
 pub use util::{
-    elide_middle, host_env_tag, host_label, inner_host, qr_url, DEFAULT_BATTERY_QR,
-    DEFAULT_BIKE_QR,
+    elide_middle, host_env_tag, host_label, inner_host, normalize_ecu_no, qr_url,
+    DEFAULT_BATTERY_QR, DEFAULT_BIKE_QR,
 };

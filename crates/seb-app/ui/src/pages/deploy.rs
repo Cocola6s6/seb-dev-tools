@@ -1,6 +1,6 @@
 use crate::api;
 use crate::components::{select_value, LogSplit};
-use crate::state::{AppCtx, DeployOptionItem};
+use crate::state::{normalize_ecu_no, AppCtx, DeployOptionItem};
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -149,7 +149,10 @@ pub fn DeployPage() -> View {
 
     let inputs = move || -> Option<(String, String, String)> {
         let bike_no = ctx.bike_no.get_clone().trim().to_string();
-        let ecu_no = ctx.device_no.get_clone().trim().to_string();
+        let ecu_no = normalize_ecu_no(&ctx.device_no.get_clone());
+        if ecu_no != ctx.device_no.get_clone() {
+            ctx.device_no.set(ecu_no.clone());
+        }
         let battery_no = ctx.battery_no.get_clone().trim().to_string();
         if bike_no.is_empty() {
             ctx.log_warn("【警告】请先填写车辆编号 (bikeNo)");
@@ -335,9 +338,31 @@ pub fn DeployPage() -> View {
                             r#type="text",
                             bind:value=ctx.device_no,
                             placeholder="如 799497080",
-                            on:change=move |_| ctx.refresh_instance(true),
+                            on:blur=move |_| {
+                                let cur = ctx.device_no.get_clone();
+                                let norm = normalize_ecu_no(&cur);
+                                if norm != cur {
+                                    ctx.device_no.set(norm);
+                                }
+                                ctx.refresh_instance(true);
+                            },
+                            on:change=move |_| {
+                                let cur = ctx.device_no.get_clone();
+                                let norm = normalize_ecu_no(&cur);
+                                if norm != cur {
+                                    ctx.device_no.set(norm);
+                                }
+                                ctx.refresh_instance(true);
+                            },
                             on:keydown=move |ev: web_sys::KeyboardEvent| {
-                                if ev.key() == "Tab" && !ev.shift_key() && ctx.device_no.get_clone().trim().is_empty() {
+                                if ev.key() == "Enter" {
+                                    let cur = ctx.device_no.get_clone();
+                                    let norm = normalize_ecu_no(&cur);
+                                    if norm != cur {
+                                        ctx.device_no.set(norm);
+                                    }
+                                    ctx.refresh_instance(true);
+                                } else if ev.key() == "Tab" && !ev.shift_key() && ctx.device_no.get_clone().trim().is_empty() {
                                     ctx.device_no.set("799497080".to_string());
                                     ctx.refresh_instance(true);
                                 }

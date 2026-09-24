@@ -73,7 +73,6 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
     });
 
     {
-        let is_wide = is_wide;
         let cb = wasm_bindgen::closure::Closure::<dyn FnMut()>::wrap(Box::new(move || {
             let w = web_sys::window()
                 .and_then(|w| w.inner_width().ok())
@@ -472,8 +471,16 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                                         base.clone()
                                     }
                                 };
-                                let toggle = move |_| {
+                                let toggle_caret = move |_| {
                                     if expandable {
+                                        open.set(!open.get());
+                                    }
+                                };
+                                let toggle_msg = move |_| {
+                                    if expandable {
+                                        if api::has_active_selection() {
+                                            return;
+                                        }
                                         open.set(!open.get());
                                     }
                                 };
@@ -489,7 +496,7 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                                 };
                                 let caret = if expandable {
                                     view! {
-                                        svg(class=caret_cls(), viewBox="0 0 24 24", fill="currentColor", on:click=toggle) {
+                                        svg(class=caret_cls(), viewBox="0 0 24 24", fill="currentColor", on:click=toggle_caret) {
                                             path(d="M9 5l8 7-8 7z") {}
                                         }
                                     }
@@ -502,26 +509,31 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                                     if !open.get() {
                                         return view! {};
                                     }
-                                    let hex_node = if hex.is_empty() {
-                                        view! {}
-                                    } else {
-                                        match hover.get().filter(|(s, e)| e * 2 <= hex.len() && s < e) {
-                                            Some((s, e)) => {
-                                                let (head, rest) = hex.split_at(s * 2);
-                                                let (mid, tail) = rest.split_at((e - s) * 2);
-                                                let (head, mid, tail) =
-                                                    (head.to_string(), mid.to_string(), tail.to_string());
-                                                view! {
-                                                    div(class="log-hex") {
-                                                        (terms.with(|t| mark(&head, t)))
-                                                        span(class="hex-hit") { (terms.with(|t| mark(&mid, t))) }
-                                                        (terms.with(|t| mark(&tail, t)))
+                                    let hex_node = {
+                                        let hex = hex.clone();
+                                        move || {
+                                            if hex.is_empty() {
+                                                view! {}
+                                            } else {
+                                                match hover.get().filter(|(s, e)| e * 2 <= hex.len() && s < e) {
+                                                    Some((s, e)) => {
+                                                        let (head, rest) = hex.split_at(s * 2);
+                                                        let (mid, tail) = rest.split_at((e - s) * 2);
+                                                        let (head, mid, tail) =
+                                                            (head.to_string(), mid.to_string(), tail.to_string());
+                                                        view! {
+                                                            div(class="log-hex") {
+                                                                (terms.with(|t| mark(&head, t)))
+                                                                span(class="hex-hit") { (terms.with(|t| mark(&mid, t))) }
+                                                                (terms.with(|t| mark(&tail, t)))
+                                                            }
+                                                        }
+                                                    }
+                                                    None => {
+                                                        let hex = hex.clone();
+                                                        view! { div(class="log-hex") { (terms.with(|t| mark(&hex, t))) } }
                                                     }
                                                 }
-                                            }
-                                            None => {
-                                                let hex = hex.clone();
-                                                view! { div(class="log-hex") { (terms.with(|t| mark(&hex, t))) } }
                                             }
                                         }
                                     };
@@ -535,8 +547,16 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                                             view! {
                                                 div(
                                                     class="log-field",
-                                                    on:mouseenter=move |_| hover.set(Some((start, end))),
-                                                    on:mouseleave=move |_| hover.set(None),
+                                                    on:mouseenter=move |_| {
+                                                        if !api::has_active_selection() {
+                                                            hover.set(Some((start, end)));
+                                                        }
+                                                    },
+                                                    on:mouseleave=move |_| {
+                                                        if !api::has_active_selection() {
+                                                            hover.set(None);
+                                                        }
+                                                    },
                                                 ) {
                                                     span(class="f-label") { (cells.0) }
                                                     span(class="f-key") { (cells.1) }
@@ -559,7 +579,7 @@ pub fn LogPane(#[prop(default)] docked: bool) -> View {
                                             (caret)
                                             (dir)
                                             (dev)
-                                            span(class="log-msg", on:click=toggle) {
+                                            span(class="log-msg", on:click=toggle_msg) {
                                                 (terms.with(|t| mark(&entry.text, t)))
                                             }
                                         }

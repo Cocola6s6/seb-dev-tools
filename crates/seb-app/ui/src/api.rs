@@ -13,7 +13,26 @@ export function tauri_invoke(cmd, args) {
 }
 
 export function copy_text(text) {
-    return navigator.clipboard.writeText(text);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+    }
+    return new Promise((resolve, reject) => {
+        try {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            const success = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            if (success) resolve();
+            else reject(new Error('复制失败'));
+        } catch (e) {
+            reject(e);
+        }
+    });
 }
 
 export function js_init_map_picker(container_id, initial_coord, callback) {
@@ -45,6 +64,11 @@ export function js_scroll_log_to_hit(index) {
         window.scrollLogToHit(index);
     }
 }
+
+export function has_active_selection() {
+    const sel = window.getSelection ? window.getSelection() : null;
+    return Boolean(sel && sel.toString() && sel.toString().trim().length > 0);
+}
 "###)]
 extern "C" {
     #[wasm_bindgen(catch)]
@@ -56,6 +80,7 @@ extern "C" {
     fn js_locate_current_position(callback: &js_sys::Function);
     fn js_start_log_resize(on_resize: &js_sys::Function, on_end: &js_sys::Function);
     fn js_scroll_log_to_hit(index: u32);
+    pub fn has_active_selection() -> bool;
 }
 
 #[derive(Serialize)]
@@ -411,6 +436,16 @@ pub async fn client_update_device(config: DeviceConfig) -> Result<Vec<DeviceStat
     invoke("client_update_device", A { config }).await
 }
 
+pub async fn client_rename_device(old_no: &str, new_no: &str) -> Result<Vec<DeviceState>, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct A<'a> {
+        old_no: &'a str,
+        new_no: &'a str,
+    }
+    invoke("client_rename_device", A { old_no, new_no }).await
+}
+
 pub async fn client_remove_device(device_no: &str) -> Result<Vec<DeviceState>, String> {
     invoke("client_remove_device", Device { device_no }).await
 }
@@ -538,6 +573,16 @@ pub async fn battery_update_device(config: BatteryConfig) -> Result<Vec<BatteryS
         config: BatteryConfig,
     }
     invoke("battery_update_device", A { config }).await
+}
+
+pub async fn battery_rename_device(old_no: &str, new_no: &str) -> Result<Vec<BatteryState>, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct A<'a> {
+        old_no: &'a str,
+        new_no: &'a str,
+    }
+    invoke("battery_rename_device", A { old_no, new_no }).await
 }
 
 pub async fn battery_remove_device(battery_no: &str) -> Result<Vec<BatteryState>, String> {

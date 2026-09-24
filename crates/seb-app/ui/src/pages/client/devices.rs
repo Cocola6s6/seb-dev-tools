@@ -2,7 +2,7 @@ use crate::actions::run_client_named;
 use crate::api;
 use gloo_timers::future::TimeoutFuture;
 use crate::components::{device_list, qr_panel, DeviceRow, DeviceSource};
-use crate::state::{qr_url, AppCtx, ClientCtx, LogLevel, Page, DEFAULT_BIKE_QR};
+use crate::state::{normalize_ecu_no, qr_url, AppCtx, ClientCtx, LogLevel, Page, DEFAULT_BIKE_QR};
 use std::rc::Rc;
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -95,6 +95,10 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
         toggle_select: Rc::new(move |no| c.toggle_select(no)),
         range_select: Rc::new(move |no| c.range_select(no)),
         add: Rc::new(move |no: String| {
+            let no = normalize_ecu_no(&no);
+            if no.is_empty() {
+                return;
+            }
             if c.devices.get_clone().iter().any(|d| d.config.device_no == no) {
                 c.select(&no);
                 return;
@@ -124,6 +128,25 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                 }
             });
         }),
+        rename: Some(Rc::new(move |old_no: String, new_no: String| {
+            let new_no = normalize_ecu_no(&new_no);
+            if new_no.is_empty() || new_no == old_no {
+                return;
+            }
+            let old_no_clone = old_no.clone();
+            let new_no_clone = new_no.clone();
+            spawn_local(async move {
+                match api::client_rename_device(&old_no_clone, &new_no_clone).await {
+                    Ok(list) => {
+                        c.devices.set(list);
+                        if c.selected.get_clone() == old_no_clone {
+                            c.select(&new_no_clone);
+                        }
+                    }
+                    Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                }
+            });
+        })),
         toggle_connect: Rc::new(move |no: String| toggle_device_connect(c, ctx, no)),
     }
 }

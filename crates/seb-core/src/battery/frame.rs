@@ -32,7 +32,7 @@ pub fn parse_coordinates(s: &str) -> Option<(f64, f64)> {
 }
 
 pub fn format_lat_lng(coords: &str) -> (String, String) {
-    let (lng, lat) = parse_coordinates(coords).unwrap_or((108.38, 22.77));
+    let (lng, lat) = parse_coordinates(coords).unwrap_or((108.375256, 22.767133));
     let lat_prefix = if lat >= 0.0 { 'N' } else { 'S' };
     let lng_prefix = if lng >= 0.0 { 'E' } else { 'W' };
     let lat_val = (lat.abs() * 1_000_000.0).round() as i64;

@@ -1,4 +1,4 @@
-use super::widgets::render_qr_svg;
+use super::widgets::{render_broken_qr_svg, render_qr_svg};
 use crate::api;
 use crate::state::{
     qr_url, AppCtx, ToolboxMode, TripleClickAction, DEFAULT_BATTERY_QR, DEFAULT_BIKE_QR,
@@ -154,6 +154,16 @@ pub fn ToolboxNavButton() -> View {
         format!("{now} (双击切换为{}，{triple_action})", mode.next().label())
     };
 
+    let is_damaged = move || {
+        if is_battery() {
+            false
+        } else {
+            let dev = ctx.device_no.get_clone().trim().to_string();
+            let bike = ctx.bike_no.get_clone().trim().to_string();
+            !dev.is_empty() && bike.is_empty()
+        }
+    };
+
     let display_no = move || {
         if is_battery() {
             let b = ctx.battery.selected.get_clone();
@@ -165,7 +175,12 @@ pub fn ToolboxNavButton() -> View {
         } else {
             let b = ctx.bike_no.get_clone().trim().to_string();
             if b.is_empty() {
-                "A60004000180".to_string()
+                let dev = ctx.device_no.get_clone().trim().to_string();
+                if !dev.is_empty() {
+                    format!("{dev} (未查到车辆编号)")
+                } else {
+                    "A60004000180".to_string()
+                }
             } else {
                 b
             }
@@ -177,25 +192,46 @@ pub fn ToolboxNavButton() -> View {
         if is_battery() {
             qr_url(&sets.battery.qr_url_template, DEFAULT_BATTERY_QR, "{battery_no}", &display_no())
         } else {
-            qr_url(&sets.client.qr_url_template, DEFAULT_BIKE_QR, "{bike_no}", &display_no())
+            let bike = ctx.bike_no.get_clone().trim().to_string();
+            if bike.is_empty() {
+                String::new()
+            } else {
+                qr_url(&sets.client.qr_url_template, DEFAULT_BIKE_QR, "{bike_no}", &bike)
+            }
         }
     };
 
     let qr_data_url = create_memo(move || {
-        let svg = render_qr_svg(&qr_url()).unwrap_or_default();
+        let svg = if is_damaged() {
+            render_broken_qr_svg()
+        } else {
+            let url = qr_url();
+            render_qr_svg(&url).unwrap_or_else(render_broken_qr_svg)
+        };
         format!("data:image/svg+xml;utf8,{}", js_sys::encode_uri_component(&svg))
     });
 
     let copy_link = move |ev: web_sys::MouseEvent| {
         ev.stop_propagation();
-        let url = qr_url();
-        spawn_local(async move {
-            let _ = api::copy_to_clipboard(&url).await;
-            copied.set(true);
-            ctx.toast("已复制二维码链接");
-            TimeoutFuture::new(1500).await;
-            copied.set(false);
-        });
+        if is_damaged() {
+            let dev = ctx.device_no.get_clone().trim().to_string();
+            spawn_local(async move {
+                let _ = api::copy_to_clipboard(&dev).await;
+                copied.set(true);
+                ctx.toast(format!("未查到车辆编号，已复制设备序列号 {dev}"));
+                TimeoutFuture::new(1500).await;
+                copied.set(false);
+            });
+        } else {
+            let url = qr_url();
+            spawn_local(async move {
+                let _ = api::copy_to_clipboard(&url).await;
+                copied.set(true);
+                ctx.toast("已复制二维码链接");
+                TimeoutFuture::new(1500).await;
+                copied.set(false);
+            });
+        }
     };
 
     // 单击 / 双击 / 三击共用一个计数器：等连击窗口过去再决定做哪一件事

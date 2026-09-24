@@ -12,6 +12,7 @@ pub mod redis;
 pub mod semantic;
 
 pub use config::AppConfig;
+pub use device::normalize_ecu_no;
 pub use flink::{FlinkJobStatus, FlinkState};
 pub use mq::Publisher;
 

@@ -22,7 +22,7 @@ pub struct SimProfile {
 impl Default for SimProfile {
     fn default() -> Self {
         Self {
-            coordinates: "108.38,22.77".into(),
+            coordinates: "108.375256,22.767133".into(),
             vehicle_state: 0,
             motion: false,
             soc: 80,

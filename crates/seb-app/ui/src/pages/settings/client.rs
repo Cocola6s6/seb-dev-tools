@@ -228,7 +228,7 @@ impl ClientSection {
                     }
                     div(class="field") {
                         label { "默认地理坐标" }
-                        input(r#type="text", placeholder="108.38,22.77", bind:value=s.default_coordinates)
+                        input(r#type="text", placeholder="108.375256,22.767133", bind:value=s.default_coordinates)
                     }
                     div(class="field") {
                         label { "默认电量 SOC" }

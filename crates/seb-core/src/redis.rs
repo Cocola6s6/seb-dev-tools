@@ -50,7 +50,7 @@ pub async fn check_health() -> Result<bool, String> {
 
 /// 查中控当前所在的网关实例号（决定下发指令的路由键后缀）；键不存在返回 `None`。
 pub async fn instance_of(device_no: &str) -> Result<Option<String>, String> {
-    let device_no = device_no.trim();
+    let device_no = crate::device::normalize_ecu_no(device_no);
     if device_no.is_empty() {
         return Err("中控设备序列号 (DeviceNo) 不能为空".to_string());
     }
@@ -63,6 +63,7 @@ pub async fn instance_of(device_no: &str) -> Result<Option<String>, String> {
 /// 一键接入时补齐中控上线所需的缓存：`bike:device:serial:no:{ecuNo}` 是
 /// seb-iot-server 鉴权中控登录的依据，缺了就连不上。
 pub async fn sync_bike_deploy_cache(ecu_no: &str, bike_no: &str, city_id: i64) -> Result<(), String> {
+    let ecu_no = crate::device::normalize_ecu_no(ecu_no);
     let ecu_key = format!("{DEVICE_SERIAL_NO_PREFIX}{ecu_no}");
     let city_key = format!("{BIKE_CITY_PREFIX}{bike_no}");
     let inst_key = format!("{KEY_PREFIX}{ecu_no}");

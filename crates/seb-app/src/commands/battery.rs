@@ -88,6 +88,29 @@ pub async fn battery_update_device(
 }
 
 #[tauri::command]
+pub async fn battery_rename_device(
+    state: State<'_, AppState>,
+    old_no: String,
+    new_no: String,
+) -> Result<Vec<BatteryState>, String> {
+    let old_no = old_no.trim();
+    let new_no = new_no.trim();
+    if new_no.is_empty() {
+        return Err("电池编号不能为空".to_string());
+    }
+    if old_no == new_no {
+        return Ok(state.batteries.states());
+    }
+    let (link, _) = state.batteries.rename(old_no, new_no)?;
+    if link.connected() {
+        link.note(format!("电池编号已变更为 {new_no}，自动断开连接"));
+        link.disconnect().await;
+    }
+    persist(&state).await;
+    Ok(state.batteries.states())
+}
+
+#[tauri::command]
 pub async fn battery_remove_device(
     state: State<'_, AppState>,
     battery_no: String,

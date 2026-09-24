@@ -58,3 +58,21 @@ pub fn render_qr_svg(content: &str) -> Option<String> {
         .build();
     Some(svg_str)
 }
+
+pub fn render_broken_qr_svg() -> String {
+    r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <rect width="200" height="200" fill="#f8fafc" rx="8" stroke="#e2e8f0" stroke-width="1"/>
+  <rect x="22" y="22" width="38" height="38" rx="4" fill="#94a3b8"/>
+  <rect x="28" y="28" width="26" height="26" rx="2" fill="#f8fafc"/>
+  <rect x="34" y="34" width="14" height="14" rx="1" fill="#94a3b8"/>
+  <rect x="140" y="22" width="38" height="38" rx="4" fill="#94a3b8"/>
+  <rect x="146" y="28" width="26" height="26" rx="2" fill="#f8fafc"/>
+  <rect x="152" y="34" width="14" height="14" rx="1" fill="#94a3b8"/>
+  <rect x="22" y="140" width="38" height="38" rx="4" fill="#94a3b8"/>
+  <rect x="28" y="146" width="26" height="26" rx="2" fill="#f8fafc"/>
+  <rect x="34" y="152" width="14" height="14" rx="1" fill="#94a3b8"/>
+  <circle cx="100" cy="100" r="24" fill="#fee2e2"/>
+  <path d="M100 86 v18 M100 112 v2.5" stroke="#ef4444" stroke-width="3.5" stroke-linecap="round"/>
+</svg>"##.to_string()
+}
+

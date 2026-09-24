@@ -19,7 +19,7 @@ impl Default for BatteryConfig {
             host: "10.12.55.31".to_string(),
             port: 32402,
             iccid: "89860409081870640660".to_string(),
-            coordinates: "108.38,22.77".to_string(),
+            coordinates: "108.375256,22.767133".to_string(),
             heartbeat: true,
         }
     }

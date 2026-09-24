@@ -74,11 +74,28 @@
       color: inherit !important;
     }
 
-    input, textarea, .log-line, .log-line *, pre, code {
+    input, textarea, pre, code,
+    .log-pane, .log-pane *,
+    .log-body, .log-body *,
+    .log-line, .log-line *,
+    .log-row, .log-row *,
+    .log-detail, .log-detail *,
+    .log-field, .log-field *,
+    .log-hex, .log-hex * {
       -webkit-user-select: text !important;
       -moz-user-select: text !important;
       -ms-user-select: text !important;
       user-select: text !important;
+    }
+
+    .log-body::selection,
+    .log-body *::selection,
+    .log-line::selection,
+    .log-line *::selection,
+    .log-pane::selection,
+    .log-pane *::selection {
+      background: #bfdbfe !important;
+      color: #0f172a !important;
     }
 
     .mono, textarea, .log-body, .log-line {
@@ -988,6 +1005,12 @@
       color: var(--accent);
       font-weight: 700;
     }
+    .client-qr-card.damaged {
+      border-color: #fecaca;
+    }
+    .client-qr-card.damaged .qr-bike-no {
+      color: #e11d48;
+    }
 
     /* 环境微标（Badge）样式 */
     .qr-env-badge {
@@ -1113,15 +1136,15 @@
     .device-item:active { transform: scale(0.97); }
     .device-item.active { background: var(--bg-top); border-color: var(--accent); }
     .device-item.active .device-no { color: var(--accent); }
-    .device-item-top { display: flex; align-items: center; gap: 7px; }
+    .device-item-top { display: flex; align-items: center; gap: 6px; min-height: 22px; }
     .device-no { font-size: 13px; font-weight: 600; flex: 1; min-width: 0;
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    /* 悬停才出现，且不占位：编号要把这一行的宽度全部用满 */
-    .device-del { position: absolute; top: 7px; right: 7px; opacity: 0; border: none; color: var(--muted);
-                  background: var(--bg-top); border-radius: 6px; transition: opacity .12s ease;
-                  display: inline-flex; align-items: center; justify-content: center; padding: 2px; cursor: pointer; line-height: 1; }
-    .device-item:hover .device-del { opacity: 1; }
-    .device-del:hover { color: var(--error); }
+    .device-actions { flex: none; display: none; align-items: center; gap: 3px; margin-left: auto; }
+    .device-item:hover .device-actions { display: inline-flex; }
+    .device-btn { border: none; color: var(--muted); background: var(--bg); border-radius: 5px;
+                  display: inline-flex; align-items: center; justify-content: center; padding: 2px 3px; cursor: pointer; line-height: 1; transition: color .12s, background .12s; }
+    .device-btn:hover { color: var(--accent); background: var(--card-bg, #fff); }
+    .device-btn.del:hover { color: var(--error); background: var(--card-bg, #fff); }
     .device-sub { margin-left: 14px; font-size: 11px; color: var(--muted);
                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .log-dev { flex: none; color: var(--muted); }
@@ -1867,6 +1890,74 @@
       background: #f1f4f9;
       position: relative;
     }
+    .inline-map-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #fff;
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      padding: 10px 12px;
+      box-shadow: 0 1px 3px rgba(16, 24, 40, .02);
+      margin-top: 16px;
+      margin-bottom: 12px;
+    }
+    .inline-map-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .inline-map-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-2);
+    }
+    .inline-map-title > input {
+      width: 240px;
+      height: 36px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--text);
+      background: #fbfcfe;
+      border: 1px solid var(--line-soft);
+      border-radius: var(--radius-sm);
+      outline: none;
+      user-select: text;
+      transition: border-color .12s, box-shadow .12s, background .12s;
+    }
+    .inline-map-title > input:focus {
+      background: #fff;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--glow);
+    }
+    .inline-map-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .inline-map-container {
+      width: 100%;
+      height: 270px;
+      border-radius: 8px;
+      border: 1px solid var(--line-soft);
+      overflow: hidden;
+      background: #f1f4f9;
+      position: relative;
+      z-index: 1;
+    }
+    .inline-map-container .amap-container,
+    .inline-map-container .leaflet-container {
+      width: 100% !important;
+      height: 100% !important;
+      background: #f1f4f9;
+    }
     .modal-footer {
       display: flex;
       align-items: center;
@@ -2111,8 +2202,12 @@
     .dock-copy:hover { color: var(--accent); background: var(--glow); }
 
   </style>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    window._AMapSecurityConfig = {
+      securityJsCode: 'eb423f5a057d6429efeb4da565c2cfd0',
+    };
+  </script>
+  <script src="https://webapi.amap.com/maps?v=2.0&key=7a435012469273cb74ee3f4de8288d21&plugin=AMap.ToolBar,AMap.Scale,AMap.Geolocation,AMap.Geocoder"></script>
   <script>
     // WGS-84 to GCJ-02 (高德火星坐标系) 转换算法
     function wgs84ToGcj02(lng, lat) {
@@ -2186,10 +2281,9 @@
     window.locateCurrentPosition = function(onSuccess, onError) {
       let resolved = false;
 
-      function applyCoord(rawLng, rawLat, isWgs84) {
+      function applyCoord(gcjLng, gcjLat) {
         if (resolved) return;
         resolved = true;
-        const [gcjLng, gcjLat] = isWgs84 ? wgs84ToGcj02(rawLng, rawLat) : [rawLng, rawLat];
         window.jumpMapCoord(gcjLng, gcjLat);
         const coordStr = gcjLng.toFixed(6) + ',' + gcjLat.toFixed(6);
         if (typeof onSuccess === 'function') {
@@ -2200,7 +2294,8 @@
       function doIpFallback() {
         fallbackIpLocation().then(function(coords) {
           if (coords) {
-            applyCoord(coords[0], coords[1], true);
+            const [gLng, gLat] = wgs84ToGcj02(coords[0], coords[1]);
+            applyCoord(gLng, gLat);
           } else {
             if (typeof onError === 'function') onError('获取物理定位及 IP 定位失败');
           }
@@ -2209,50 +2304,87 @@
         });
       }
 
-      if (navigator.geolocation) {
-        // 先尝试浏览器/系统定位，设置 2.5 秒超时，若未响应或被系统拦截则迅速进入 IP 兜底定位
-        const timer = setTimeout(function() {
-          if (!resolved) {
-            doIpFallback();
-          }
-        }, 2500);
+      function tryBrowserLocation() {
+        if (navigator.geolocation) {
+          const timer = setTimeout(function() {
+            if (!resolved) {
+              doIpFallback();
+            }
+          }, 2500);
 
-        navigator.geolocation.getCurrentPosition(
-          function(position) {
-            clearTimeout(timer);
-            const wgsLat = position.coords.latitude;
-            const wgsLng = position.coords.longitude;
-            applyCoord(wgsLng, wgsLat, true);
-          },
-          function(err) {
-            clearTimeout(timer);
-            console.warn('Geolocation failed or denied, trying IP fallback...', err);
-            doIpFallback();
-          },
-          { enableHighAccuracy: false, timeout: 2500, maximumAge: 30000 }
-        );
-      } else {
-        doIpFallback();
+          navigator.geolocation.getCurrentPosition(
+            function(position) {
+              clearTimeout(timer);
+              const [gLng, gLat] = wgs84ToGcj02(position.coords.longitude, position.coords.latitude);
+              applyCoord(gLng, gLat);
+            },
+            function(err) {
+              clearTimeout(timer);
+              console.warn('Browser geolocation failed, falling back to IP...', err);
+              doIpFallback();
+            },
+            { enableHighAccuracy: false, timeout: 2500, maximumAge: 30000 }
+          );
+        } else {
+          doIpFallback();
+        }
       }
+
+      if (typeof AMap !== 'undefined' && AMap.Geolocation) {
+        try {
+          const amapGeo = new AMap.Geolocation({
+            enableHighAccuracy: true,
+            timeout: 2500,
+            needAddress: false
+          });
+          amapGeo.getCurrentPosition(function(status, result) {
+            if (status === 'complete' && result && result.position) {
+              applyCoord(result.position.lng, result.position.lat);
+            } else {
+              tryBrowserLocation();
+            }
+          });
+          return;
+        } catch(e) {
+          console.warn('AMap.Geolocation error:', e);
+        }
+      }
+
+      tryBrowserLocation();
     };
 
+    window._mapInstances = {};
+    window._mapCallbacks = {};
+
     window.initMapPicker = function(containerId, initialCoordStr, onPick) {
-      if (typeof L === 'undefined') {
-        console.error('Leaflet library is not loaded');
+      if (typeof AMap === 'undefined') {
+        console.warn('AMap library is loading, retrying in 120ms...');
+        setTimeout(function() {
+          window.initMapPicker(containerId, initialCoordStr, onPick);
+        }, 120);
         return;
       }
       const container = document.getElementById(containerId);
-      if (!container) return;
-
-      if (window._activeMapInstance) {
-        try { window._activeMapInstance.remove(); } catch(e) {}
-        window._activeMapInstance = null;
+      if (!container) {
+        setTimeout(function() {
+          window.initMapPicker(containerId, initialCoordStr, onPick);
+        }, 80);
+        return;
       }
 
-      let lng = 108.38;
-      let lat = 22.77;
+      if (window._mapInstances[containerId]) {
+        try {
+          if (window._mapInstances[containerId].map) {
+            window._mapInstances[containerId].map.destroy();
+          }
+        } catch(e) {}
+        delete window._mapInstances[containerId];
+      }
+      container.innerHTML = '';
+
+      let lng = 108.375256;
+      let lat = 22.767133;
       let zoom = 14;
-      let hasCustomCoord = false;
 
       if (initialCoordStr && initialCoordStr.indexOf(',') !== -1) {
         const parts = initialCoordStr.split(',');
@@ -2261,84 +2393,97 @@
         if (!isNaN(pLng) && !isNaN(pLat) && pLng > 0 && pLat > 0) {
           lng = pLng;
           lat = pLat;
-          zoom = 16;
-          // 如果不是默认占位坐标，则保留已有坐标
-          if (initialCoordStr.trim() !== "116.29721053978871,40.05213174125153" && initialCoordStr.trim() !== "113.324520,23.109980" && initialCoordStr.trim() !== "108.38,22.77") {
-            hasCustomCoord = true;
+        }
+      }
+
+      try {
+        const map = new AMap.Map(containerId, {
+          zoom: zoom,
+          center: [lng, lat],
+          resizeEnable: true,
+          viewMode: '2D',
+          lang: 'zh_cn'
+        });
+
+        const marker = new AMap.Marker({
+          position: new AMap.LngLat(lng, lat),
+          draggable: true,
+          cursor: 'move',
+          anchor: 'bottom-center'
+        });
+        marker.setMap(map);
+
+        window._mapInstances[containerId] = { map: map, marker: marker };
+        window._mapCallbacks[containerId] = onPick;
+
+        function updateCoord(newLng, newLat) {
+          const pos = new AMap.LngLat(newLng, newLat);
+          marker.setPosition(pos);
+          const coordStr = newLng.toFixed(6) + ',' + newLat.toFixed(6);
+          if (typeof onPick === 'function') {
+            onPick(coordStr);
           }
         }
-      }
 
-      const map = L.map(containerId, {
-        center: [lat, lng],
-        zoom: zoom,
-        zoomControl: true,
-        attributionControl: false
-      });
-      window._activeMapInstance = map;
-      window._activeMapOnPick = onPick;
+        updateCoord(lng, lat);
 
-      L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-        subdomains: ['1', '2', '3', '4'],
-        maxZoom: 18,
-        minZoom: 3
-      }).addTo(map);
-
-      const icon = L.divIcon({
-        className: 'custom-map-pin',
-        html: '<div style="position:relative;width:24px;height:24px;margin-left:-12px;margin-top:-24px;"><svg viewBox="0 0 24 24" width="28" height="28" fill="#ef4444" style="filter:drop-shadow(0 2px 5px rgba(0,0,0,0.35));"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></div>',
-        iconSize: [24, 24],
-        iconAnchor: [12, 24],
-        popupAnchor: [0, -26]
-      });
-
-      const marker = L.marker([lat, lng], { draggable: true, icon: icon }).addTo(map);
-
-      function updateCoord(newLat, newLng) {
-        marker.setLatLng([newLat, newLng]);
-        const coordStr = newLng.toFixed(6) + ',' + newLat.toFixed(6);
-        marker.bindPopup(`<div style="font-size:12px;line-height:1.5;font-weight:500;"><b>已选坐标 (GCJ-02)</b><br><span style="color:#0f9d76;font-family:monospace;">${coordStr}</span></div>`).openPopup();
-        if (typeof onPick === 'function') {
-          onPick(coordStr);
-        }
-      }
-
-      updateCoord(lat, lng);
-
-      map.on('click', function(e) {
-        updateCoord(e.latlng.lat, e.latlng.lng);
-      });
-
-      marker.on('dragend', function(e) {
-        const pos = marker.getLatLng();
-        updateCoord(pos.lat, pos.lng);
-      });
-
-      setTimeout(function() {
-        map.invalidateSize();
-      }, 150);
-
-      // 如果未指定自定义坐标，默认尝试自动定位到用户当前物理位置
-      if (!hasCustomCoord && navigator.geolocation) {
-        window.locateCurrentPosition(function(pickedStr) {
-          if (typeof onPick === 'function') {
-            onPick(pickedStr);
+        map.on('click', function(e) {
+          if (e && e.lnglat) {
+            updateCoord(e.lnglat.getLng(), e.lnglat.getLat());
           }
         });
+
+        marker.on('dragend', function(e) {
+          if (e && e.lnglat) {
+            updateCoord(e.lnglat.getLng(), e.lnglat.getLat());
+          } else {
+            const pos = marker.getPosition();
+            if (pos) {
+              updateCoord(pos.getLng(), pos.getLat());
+            }
+          }
+        });
+
+        // 使用 ResizeObserver 监听容器尺寸动态变化，并在变化时自动刷新高德地图
+        if (window.ResizeObserver) {
+          try {
+            if (container._resizeObserver) {
+              container._resizeObserver.disconnect();
+            }
+            const ro = new ResizeObserver(function() {
+              if (map && typeof map.resize === 'function') {
+                map.resize();
+              }
+            });
+            ro.observe(container);
+            container._resizeObserver = ro;
+          } catch(e) {}
+        }
+
+        requestAnimationFrame(function() {
+          if (map && typeof map.resize === 'function') map.resize();
+        });
+        setTimeout(function() { if (map && typeof map.resize === 'function') map.resize(); }, 60);
+        setTimeout(function() { if (map && typeof map.resize === 'function') map.resize(); }, 200);
+        setTimeout(function() { if (map && typeof map.resize === 'function') map.resize(); }, 500);
+        setTimeout(function() { if (map && typeof map.resize === 'function') map.resize(); }, 1200);
+      } catch(err) {
+        console.error('AMap initialization error:', err);
       }
     };
 
     window.jumpMapCoord = function(lng, lat) {
-      if (window._activeMapInstance) {
-        window._activeMapInstance.setView([lat, lng], 16);
-        window._activeMapInstance.eachLayer(function(layer) {
-          if (layer instanceof L.Marker) {
-            layer.setLatLng([lat, lng]);
-            const coordStr = lng.toFixed(6) + ',' + lat.toFixed(6);
-            layer.bindPopup(`<div style="font-size:12px;line-height:1.5;font-weight:500;"><b>已选坐标 (GCJ-02)</b><br><span style="color:#0f9d76;font-family:monospace;">${coordStr}</span></div>`).openPopup();
-            if (typeof window._activeMapOnPick === 'function') {
-              window._activeMapOnPick(coordStr);
+      if (window._mapInstances) {
+        Object.values(window._mapInstances).forEach(function(item) {
+          if (!item || !item.map) return;
+          try {
+            const pos = new AMap.LngLat(lng, lat);
+            item.map.setZoomAndCenter(14, pos);
+            if (item.marker) {
+              item.marker.setPosition(pos);
             }
+          } catch(e) {
+            console.error('jumpMapCoord error:', e);
           }
         });
       }

@@ -106,7 +106,7 @@ pub async fn publish(
 
 pub async fn device_no(state: &AppState) -> Result<String, String> {
     let publisher = state.publisher.lock().await;
-    let no = publisher.config().device_no.trim().to_string();
+    let no = seb_core::normalize_ecu_no(&publisher.config().device_no);
     if no.is_empty() {
         Err("中控设备序列号 (DeviceNo) 不能为空".to_string())
     } else {

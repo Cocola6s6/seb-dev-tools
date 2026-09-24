@@ -3,9 +3,9 @@ mod devices;
 use crate::actions::run_client_named;
 use crate::api;
 use crate::components::{
-    select_value, Check, Field, MapPickerModal,
+    select_value, Check, Field, InlineMapPicker,
 };
-use crate::state::{AlarmType, AppCtx, LogLevel};
+use crate::state::{normalize_ecu_no, AlarmType, AppCtx, LogLevel};
 use gloo_timers::future::TimeoutFuture;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -47,7 +47,6 @@ pub fn ClientPage() -> View {
     let gw_inner = create_memo(move || gw_or(ctx.global_settings.get_clone().client.default_inner_gw, GW_INNER));
     let gw_test = create_memo(move || gw_or(ctx.global_settings.get_clone().client.default_test_gw, GW_TEST));
     let gw_prod = create_memo(move || gw_or(ctx.global_settings.get_clone().client.default_prod_gw, GW_PROD));
-    let map_picker_open = create_signal(false);
     let battery_dropdown_open = create_signal(false);
     let qr_selection_seq = Rc::new(Cell::new(0u32));
 
@@ -451,8 +450,60 @@ pub fn ClientPage() -> View {
 
                     div(class="device-main") {
                         div(class="section") {
-                            div(class="section-title") { "网关连接" }
+                            div(class="section-title") { "中控与网关" }
                             div(class="grid grid-2") {
+                                div(class="field") {
+                                    label { "中控序列号 (ECU)" }
+                                    input(
+                                        r#type="text",
+                                        placeholder="9位中控序列号 (如 799497080)",
+                                        bind:value=c.device_no,
+                                        on:blur=move |_| {
+                                            let cur = c.device_no.get_clone();
+                                            let norm = normalize_ecu_no(&cur);
+                                            if norm != cur {
+                                                c.device_no.set(norm.clone());
+                                            }
+                                            let owner = c.owner.get_clone();
+                                            if !norm.is_empty() && !owner.is_empty() && norm != owner {
+                                                let owner_clone = owner.clone();
+                                                let norm_clone = norm.clone();
+                                                spawn_local(async move {
+                                                    match api::client_rename_device(&owner_clone, &norm_clone).await {
+                                                        Ok(list) => {
+                                                            c.devices.set(list);
+                                                            c.select(&norm_clone);
+                                                        }
+                                                        Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                                                    }
+                                                });
+                                            }
+                                        },
+                                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                            if ev.key() == "Enter" {
+                                                let cur = c.device_no.get_clone();
+                                                let norm = normalize_ecu_no(&cur);
+                                                if norm != cur {
+                                                    c.device_no.set(norm.clone());
+                                                }
+                                                let owner = c.owner.get_clone();
+                                                if !norm.is_empty() && !owner.is_empty() && norm != owner {
+                                                    let owner_clone = owner.clone();
+                                                    let norm_clone = norm.clone();
+                                                    spawn_local(async move {
+                                                        match api::client_rename_device(&owner_clone, &norm_clone).await {
+                                                            Ok(list) => {
+                                                                c.devices.set(list);
+                                                                c.select(&norm_clone);
+                                                            }
+                                                            Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
                                 div(class="field") {
                                     label {
                                         span { "网关地址" }
@@ -489,32 +540,8 @@ pub fn ClientPage() -> View {
                         }
 
                         div(class="section") {
-                            div(class="section-title") { "车辆姿态" }
+                            div(class="section-title") { "车辆姿态与定位" }
                             div(class="grid grid-3") {
-                                div(class="field") {
-                                    label { "坐标(高德)" }
-                                    div(class="field-inline") {
-                                        input(
-                                            r#type="text",
-                                            placeholder="如 108.38,22.77",
-                                            bind:value=c.coordinates,
-                                            on:keydown=move |ev: web_sys::KeyboardEvent| {
-                                                if ev.key() == "Tab" && !ev.shift_key() && c.coordinates.get_clone().trim().is_empty() {
-                                                    c.coordinates.set("108.38,22.77".to_string());
-                                                }
-                                            }
-                                        )
-                                        button(
-                                            class="icon-btn",
-                                            title="选择地图坐标",
-                                            on:click=move |_| map_picker_open.set(true)
-                                        ) {
-                                            svg(viewBox="0 0 24 24", width="16", height="16", fill="currentColor") {
-                                                path(d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z") {}
-                                            }
-                                        }
-                                    }
-                                }
                                 div(class="field") {
                                     label { "车辆状态" }
                                     select(on:change=move |ev| c.vehicle_state.set(select_value(ev))) {
@@ -610,13 +637,14 @@ pub fn ClientPage() -> View {
                                 Field(label="偏向角", value=c.deflection_angle)
                                 Field(label="速度", value=c.speed)
                             }
-                            div(class="row checks", style="margin-top:14px") {
+                            div(class="row checks", style="margin-top:16px; margin-bottom:18px;") {
                                 Check(label="车辆运动状态（运动中）", checked=c.motion)
                                 Check(label="头盔锁状态（已解锁）", checked=c.helmet_lock_unlocked)
                                 Check(label="头盔在位状态（在位）", checked=c.helmet_present)
                                 Check(label="尾箱在位状态（加锁/在位）", checked=c.trunk_latch)
                                 Check(label="供电状态（供电）", checked=c.acc_on)
                             }
+                            InlineMapPicker(container_id="client-inline-map", target_coord=c.coordinates)
                             div(class="card-actions") {
                                 button(class="primary", on:click=send_location) { (loc_btn_text.get_clone()) }
                                 button(on:click=send_bms) { (bms_btn_text.get_clone()) }
@@ -673,8 +701,6 @@ pub fn ClientPage() -> View {
                         }
                     }
                 }
-
-                MapPickerModal(open=map_picker_open, target_coord=c.coordinates)
             }
         }
     }

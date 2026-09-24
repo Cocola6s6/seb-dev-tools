@@ -2,7 +2,7 @@ mod devices;
 
 use crate::actions::run_battery_named;
 use crate::api;
-use crate::components::{Check, MapPickerModal};
+use crate::components::{Check, InlineMapPicker};
 use crate::state::{AppCtx, LogLevel};
 use gloo_timers::future::TimeoutFuture;
 use std::cell::Cell;
@@ -31,7 +31,6 @@ pub fn BatteryPage() -> View {
     let gw_inner = create_memo(move || gw_or(ctx.global_settings.get_clone().battery.default_inner_gw, GW_INNER));
     let gw_test = create_memo(move || gw_or(ctx.global_settings.get_clone().battery.default_test_gw, GW_TEST));
     let gw_prod = create_memo(move || gw_or(ctx.global_settings.get_clone().battery.default_prod_gw, GW_PROD));
-    let map_picker_open = create_signal(false);
 
     // 表单任一项变动就把配置同步给后台落盘；owner 为空说明正在切设备，这一轮不能写。
     let seq = Rc::new(Cell::new(0u32));
@@ -256,8 +255,60 @@ pub fn BatteryPage() -> View {
 
                     div(class="device-main") {
                         div(class="section") {
-                            div(class="section-title") { "网关连接" }
+                            div(class="section-title") { "电池与网关" }
                             div(class="grid grid-2") {
+                                div(class="field") {
+                                    label { "电池编号" }
+                                    input(
+                                        r#type="text",
+                                        placeholder="电池编号",
+                                        bind:value=b.battery_no,
+                                        on:blur=move |_| {
+                                            let cur = b.battery_no.get_clone();
+                                            let norm = cur.trim().to_string();
+                                            if norm != cur {
+                                                b.battery_no.set(norm.clone());
+                                            }
+                                            let owner = b.owner.get_clone();
+                                            if !norm.is_empty() && !owner.is_empty() && norm != owner {
+                                                let owner_clone = owner.clone();
+                                                let norm_clone = norm.clone();
+                                                spawn_local(async move {
+                                                    match api::battery_rename_device(&owner_clone, &norm_clone).await {
+                                                        Ok(list) => {
+                                                            b.devices.set(list);
+                                                            b.select(&norm_clone);
+                                                        }
+                                                        Err(e) => ctx.log_battery(format!("【错误】{e}"), LogLevel::Error),
+                                                    }
+                                                });
+                                            }
+                                        },
+                                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                            if ev.key() == "Enter" {
+                                                let cur = b.battery_no.get_clone();
+                                                let norm = cur.trim().to_string();
+                                                if norm != cur {
+                                                    b.battery_no.set(norm.clone());
+                                                }
+                                                let owner = b.owner.get_clone();
+                                                if !norm.is_empty() && !owner.is_empty() && norm != owner {
+                                                    let owner_clone = owner.clone();
+                                                    let norm_clone = norm.clone();
+                                                    spawn_local(async move {
+                                                        match api::battery_rename_device(&owner_clone, &norm_clone).await {
+                                                            Ok(list) => {
+                                                                b.devices.set(list);
+                                                                b.select(&norm_clone);
+                                                            }
+                                                            Err(e) => ctx.log_battery(format!("【错误】{e}"), LogLevel::Error),
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
                                 div(class="field") {
                                     label {
                                         span { "网关地址" }
@@ -294,33 +345,8 @@ pub fn BatteryPage() -> View {
                         }
 
                         div(class="section") {
-                            div(class="section-title") { "电池定位" }
-                            div(class="grid grid-2") {
-                                div(class="field") {
-                                    label { "坐标(高德)" }
-                                    div(class="field-inline") {
-                                        input(
-                                            r#type="text",
-                                            placeholder="如 108.38,22.77",
-                                            bind:value=b.coordinates,
-                                            on:keydown=move |ev: web_sys::KeyboardEvent| {
-                                                if ev.key() == "Tab" && !ev.shift_key() && b.coordinates.get_clone().trim().is_empty() {
-                                                    b.coordinates.set("108.38,22.77".to_string());
-                                                }
-                                            }
-                                        )
-                                        button(
-                                            class="icon-btn",
-                                            title="选择地图坐标",
-                                            on:click=move |_| map_picker_open.set(true)
-                                        ) {
-                                            svg(viewBox="0 0 24 24", width="16", height="16", fill="currentColor") {
-                                                path(d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z") {}
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            div(class="section-title") { "电池位置与定位" }
+                            InlineMapPicker(container_id="battery-inline-map", target_coord=b.coordinates)
                             div(class="card-actions") {
                                 button(class="primary", on:click=send_location) { "上报定位" }
                             }
@@ -338,7 +364,5 @@ pub fn BatteryPage() -> View {
                 }
             }
         }
-
-        MapPickerModal(open=map_picker_open, target_coord=b.coordinates)
     }
 }

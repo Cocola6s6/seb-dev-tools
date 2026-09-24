@@ -1,5 +1,5 @@
 use super::toolbox::pick_egg;
-use super::widgets::render_qr_svg;
+use super::widgets::{render_broken_qr_svg, render_qr_svg};
 use crate::api;
 use crate::state::{qr_url, AppCtx, DEFAULT_BATTERY_QR, DEFAULT_BIKE_QR};
 use gloo_timers::future::TimeoutFuture;
@@ -286,13 +286,32 @@ fn icon_svg(card: Card) -> View {
 }
 
 fn qr_card(ctx: AppCtx, is_battery: Signal<bool>, copied: Signal<bool>) -> View {
+    let is_damaged = move || {
+        if is_battery.get() {
+            false
+        } else {
+            let dev = ctx.device_no.get_clone().trim().to_string();
+            let bike = ctx.bike_no.get_clone().trim().to_string();
+            !dev.is_empty() && bike.is_empty()
+        }
+    };
+
     let display_no = move || {
         if is_battery.get() {
             let b = ctx.battery_no.get_clone().trim().to_string();
             if b.is_empty() { "CMAH030799497009".to_string() } else { b }
         } else {
             let b = ctx.bike_no.get_clone().trim().to_string();
-            if b.is_empty() { "A60004000180".to_string() } else { b }
+            if b.is_empty() {
+                let dev = ctx.device_no.get_clone().trim().to_string();
+                if !dev.is_empty() {
+                    format!("{dev} (未查到车辆编号)")
+                } else {
+                    "A60004000180".to_string()
+                }
+            } else {
+                b
+            }
         }
     };
     let link = move || {
@@ -300,21 +319,43 @@ fn qr_card(ctx: AppCtx, is_battery: Signal<bool>, copied: Signal<bool>) -> View 
         if is_battery.get() {
             qr_url(&sets.battery.qr_url_template, DEFAULT_BATTERY_QR, "{battery_no}", &display_no())
         } else {
-            qr_url(&sets.client.qr_url_template, DEFAULT_BIKE_QR, "{bike_no}", &display_no())
+            let bike = ctx.bike_no.get_clone().trim().to_string();
+            if bike.is_empty() {
+                String::new()
+            } else {
+                qr_url(&sets.client.qr_url_template, DEFAULT_BIKE_QR, "{bike_no}", &bike)
+            }
         }
     };
     let qr_data_url = create_memo(move || {
-        let svg = render_qr_svg(&link()).unwrap_or_default();
+        let svg = if is_damaged() {
+            render_broken_qr_svg()
+        } else {
+            let url = link();
+            render_qr_svg(&url).unwrap_or_else(render_broken_qr_svg)
+        };
         format!("data:image/svg+xml;utf8,{}", js_sys::encode_uri_component(&svg))
     });
     let copy_link = move |_| {
-        let url = link();
-        spawn_local(async move {
-            let _ = api::copy_to_clipboard(&url).await;
-            copied.set(true);
-            TimeoutFuture::new(1500).await;
-            copied.set(false);
-        });
+        if is_damaged() {
+            let dev = ctx.device_no.get_clone().trim().to_string();
+            spawn_local(async move {
+                let _ = api::copy_to_clipboard(&dev).await;
+                copied.set(true);
+                ctx.toast(format!("未查到车辆编号，已复制设备序列号 {dev}"));
+                TimeoutFuture::new(1500).await;
+                copied.set(false);
+            });
+        } else {
+            let url = link();
+            spawn_local(async move {
+                let _ = api::copy_to_clipboard(&url).await;
+                copied.set(true);
+                ctx.toast("已复制二维码链接");
+                TimeoutFuture::new(1500).await;
+                copied.set(false);
+            });
+        }
     };
 
     view! {
@@ -333,7 +374,11 @@ fn qr_card(ctx: AppCtx, is_battery: Signal<bool>, copied: Signal<bool>) -> View 
         }
         div(class="dock-no") {
             span { (display_no()) }
-            button(class="dock-copy", title="复制链接", on:click=copy_link) {
+            button(
+                class="dock-copy",
+                title=move || if is_damaged() { "复制设备序列号" } else { "复制链接" },
+                on:click=copy_link
+            ) {
                 (if copied.get() { "已复制" } else { "复制" })
             }
         }

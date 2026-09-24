@@ -15,6 +15,19 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_GATEWAY_HOST: &str = "bike-seb-inner-test.costrip.cn";
 pub const DEFAULT_GATEWAY_PORT: u16 = 32405;
 
+/// ECU 序列号标准为 9 位数字字符，不够 9 位时左侧自动补 0（如 7 位补 00 前缀）
+pub fn normalize_ecu_no(s: &str) -> String {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.len() < 9 {
+        format!("{:0>9}", trimmed)
+    } else {
+        trimmed.to_string()
+    }
+}
+
 const DEFAULT_PING_SECS: u64 = 60;
 const MAX_BUFFERED: usize = 500;
 
@@ -72,7 +85,7 @@ pub struct SimProfile {
 impl Default for SimProfile {
     fn default() -> Self {
         Self {
-            coordinates: "108.38,22.77".into(),
+            coordinates: "108.375256,22.767133".into(),
             vehicle_state: 0,
             motion: false,
             soc: 80,
@@ -91,7 +104,7 @@ impl Default for SimProfile {
 
 impl SimProfile {
     fn coords(&self) -> (f64, f64) {
-        frame::parse_coordinates(&self.coordinates).unwrap_or((108.38, 22.77))
+        frame::parse_coordinates(&self.coordinates).unwrap_or((108.375256, 22.767133))
     }
 
     pub fn location_opts(&self) -> frame::LocationOpts {
@@ -605,6 +618,23 @@ impl DeviceFleet {
             .find(|l| l.device_no() == device_no)
             .cloned()
             .ok_or_else(|| format!("设备 {device_no} 不在模拟清单里"))
+    }
+
+    pub fn rename(&self, old_no: &str, new_no: &str) -> Result<(Arc<DeviceLink>, bool), String> {
+        let links = self.links.lock().unwrap();
+        if links.iter().any(|l| l.device_no() == new_no && l.device_no() != old_no) {
+            return Err(format!("设备序列号 {new_no} 已存在"));
+        }
+        let link = links
+            .iter()
+            .find(|l| l.device_no() == old_no)
+            .cloned()
+            .ok_or_else(|| format!("设备 {old_no} 不在模拟清单里"))?;
+
+        let mut cfg = link.config();
+        cfg.device_no = new_no.to_string();
+        let moved = link.set_config(cfg);
+        Ok((link, moved))
     }
 
     pub fn remove(&self, device_no: &str) -> Option<Arc<DeviceLink>> {

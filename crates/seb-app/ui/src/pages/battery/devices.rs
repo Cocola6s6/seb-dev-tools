@@ -105,6 +105,25 @@ fn battery_source(ctx: AppCtx) -> DeviceSource {
                 }
             });
         }),
+        rename: Some(Rc::new(move |old_no: String, new_no: String| {
+            let new_no = new_no.trim().to_string();
+            if new_no.is_empty() || new_no == old_no {
+                return;
+            }
+            let old_no_clone = old_no.clone();
+            let new_no_clone = new_no.clone();
+            spawn_local(async move {
+                match api::battery_rename_device(&old_no_clone, &new_no_clone).await {
+                    Ok(list) => {
+                        b.devices.set(list);
+                        if b.selected.get_clone() == old_no_clone {
+                            b.select(&new_no_clone);
+                        }
+                    }
+                    Err(e) => ctx.log_battery(format!("【错误】{e}"), LogLevel::Error),
+                }
+            });
+        })),
         toggle_connect: Rc::new(move |no: String| toggle_battery_connect(b, ctx, no)),
     }
 }

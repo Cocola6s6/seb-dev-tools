@@ -1059,7 +1059,7 @@ pub fn reply_pre_return(msg_id: &str, o: &PreReturnOpts) -> Frame {
 pub fn gcj02_to_wgs84(lng: f64, lat: f64) -> (f64, f64) {
     use std::f64::consts::PI;
     const A: f64 = 6378245.0;
-    const EE: f64 = 0.00669342162296594323;
+    const EE: f64 = 0.006_693_421_622_965_943;
 
     if !(73.66..135.05).contains(&lng) || !(3.86..53.55).contains(&lat) {
         return (lng, lat);
@@ -1273,16 +1273,13 @@ pub fn parse(frame: &[u8]) -> Option<Parsed> {
 pub fn split_frames(buf: &[u8]) -> (Vec<Vec<u8>>, usize) {
     let mut frames = Vec::new();
     let mut pos = 0;
-    loop {
-        let Some(start) = (pos..buf.len().saturating_sub(1)).find(|&i| buf[i] == 0xAA && buf[i + 1] == 0xAA) else {
-            break;
-        };
+    while let Some(start) = (pos..buf.len().saturating_sub(1)).find(|&i| buf[i] == 0xAA && buf[i + 1] == 0xAA) {
         if buf.len() - start < 4 {
             pos = start;
             break;
         }
         let total = u16::from_be_bytes([buf[start + 2], buf[start + 3]]) as usize;
-        if total < 12 || total > 8192 {
+        if !(12..=8192).contains(&total) {
             // 长度不合理，跳过这个疑似帧头继续找
             pos = start + 2;
             continue;
