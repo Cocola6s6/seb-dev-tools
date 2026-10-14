@@ -48,15 +48,15 @@ pub fn WhatsNewNotice() -> View {
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "修改设备号" }
-                                "：左侧设备可以点小图标直接改序列号，改完敲回车就能保存。"
+                                span(class="whats-new-label") { "车辆编号上报" }
+                                "：中控客户端全面支持填入车辆编号，自动解析关联中控 ECU 并带出绑定电池。"
                             }
                         }
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "高德地图选点" }
-                                "：自带高德地图，可以在地图上直接戳位置选点，也支持输入经纬度和切换快捷城市。"
+                                span(class="whats-new-label") { "设备列表车辆化" }
+                                "：左侧设备列表优先显示车辆编号，新增、行内修改及快捷复制全面支持车辆编号。"
                             }
                         }
                     }

@@ -724,7 +724,167 @@ pub async fn load_battery_options(cfg: &MysqlConfig) -> Vec<BatteryOptionItem> {
     items
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BikeResolveInfo {
+    pub bike_no: String,
+    pub ecu_no: String,
+    pub battery_no: Option<String>,
+}
 
+/// 根据输入的车辆编号（或中控ECU编号）解析出完整的车辆、ECU及绑定的电池信息
+pub async fn resolve_bike_or_ecu(
+    cfg: &MysqlConfig,
+    query: &str,
+) -> Result<Option<BikeResolveInfo>, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(None);
+    }
+
+    let pool = get_or_create_pool(cfg).await?;
+
+    let mut found_bike: Option<String> = None;
+    let mut found_ecu: Option<String> = None;
+
+    // 1. 优先按 bike_no 精确匹配 bike_tb
+    let row = sqlx::query(
+        "select bike_no, ecu_no from bike_tb where bike_no = ? and deleted = 0 limit 1",
+    )
+    .bind(q)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| format!("查询 bike_tb 失败: {e}"))?;
+
+    if let Some(r) = row {
+        let b = r.try_get::<String, _>("bike_no").unwrap_or_default().trim().to_string();
+        let e = r.try_get::<String, _>("ecu_no").unwrap_or_default().trim().to_string();
+        if !b.is_empty() {
+            found_bike = Some(b);
+        }
+        if !e.is_empty() {
+            found_ecu = Some(crate::device::normalize_ecu_no(&e));
+        }
+    }
+
+    // 2. 若 bike_tb 查到车辆但没有 ecu_no，或者未查到车辆，再查 bike_ecu_relation_tb
+    if found_bike.is_none() || found_ecu.is_none() {
+        let rel_row = sqlx::query(
+            "select bike_no, ecu_no from bike_ecu_relation_tb where bike_no = ? and deleted = 0 order by id desc limit 1",
+        )
+        .bind(q)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| format!("查询 bike_ecu_relation_tb 失败: {e}"))?;
+
+        if let Some(r) = rel_row {
+            let b = r.try_get::<String, _>("bike_no").unwrap_or_default().trim().to_string();
+            let e = r.try_get::<String, _>("ecu_no").unwrap_or_default().trim().to_string();
+            if found_bike.is_none() && !b.is_empty() {
+                found_bike = Some(b);
+            }
+            if found_ecu.is_none() && !e.is_empty() {
+                found_ecu = Some(crate::device::normalize_ecu_no(&e));
+            }
+        }
+    }
+
+    // 3. 如果按 bike_no 依然没有查到，尝试按 ecu_no 查找（兼容用户输入 ECU 序列号的情形）
+    if found_bike.is_none() || found_ecu.is_none() {
+        let norm_q = crate::device::normalize_ecu_no(q);
+        if !norm_q.is_empty() {
+            let ecu_row = sqlx::query(
+                "select bike_no, ecu_no from bike_tb where ecu_no = ? and deleted = 0 limit 1",
+            )
+            .bind(&norm_q)
+            .fetch_optional(&pool)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some(r) = ecu_row {
+                let b = r.try_get::<String, _>("bike_no").unwrap_or_default().trim().to_string();
+                let e = r.try_get::<String, _>("ecu_no").unwrap_or_default().trim().to_string();
+                if !b.is_empty() {
+                    found_bike = Some(b);
+                }
+                found_ecu = Some(crate::device::normalize_ecu_no(if !e.is_empty() { &e } else { &norm_q }));
+            } else {
+                let ecu_rel_row = sqlx::query(
+                    "select bike_no, ecu_no from bike_ecu_relation_tb where ecu_no = ? and deleted = 0 order by id desc limit 1",
+                )
+                .bind(&norm_q)
+                .fetch_optional(&pool)
+                .await
+                .ok()
+                .flatten();
+
+                if let Some(r) = ecu_rel_row {
+                    let b = r.try_get::<String, _>("bike_no").unwrap_or_default().trim().to_string();
+                    let e = r.try_get::<String, _>("ecu_no").unwrap_or_default().trim().to_string();
+                    if !b.is_empty() {
+                        found_bike = Some(b);
+                    }
+                    found_ecu = Some(crate::device::normalize_ecu_no(if !e.is_empty() { &e } else { &norm_q }));
+                }
+            }
+        }
+    }
+
+    // 4. 如果还是没查到 bike_no，但有可能是纯数字 ECU 号，检查 Redis 的鉴权缓存
+    if found_bike.is_none() {
+        let norm_q = crate::device::normalize_ecu_no(q);
+        if !norm_q.is_empty() {
+            let key = format!("{}{norm_q}", crate::redis::DEVICE_SERIAL_NO_PREFIX);
+            if let Ok(Some(redis_bike)) = crate::redis::get(&key).await {
+                let redis_bike = redis_bike.trim().to_string();
+                if !redis_bike.is_empty() {
+                    found_bike = Some(redis_bike);
+                    found_ecu = Some(norm_q);
+                }
+            }
+        }
+    }
+
+    // 5. 判断最终解析出的标识
+    let (bike_no, ecu_no) = match (found_bike, found_ecu) {
+        (Some(b), Some(e)) => (b, e),
+        (Some(b), None) => (b.clone(), String::new()),
+        (None, Some(e)) => (String::new(), e),
+        (None, None) => return Ok(None),
+    };
+
+    // 如果 ECU 为空，无法通信，返回 None
+    if ecu_no.is_empty() {
+        return Ok(None);
+    }
+
+    // 6. 查绑定的电池编号
+    let mut battery_no = None;
+    if !bike_no.is_empty() {
+        let bat_row = sqlx::query(
+            "select battery_no from bike_battery_tb where bike_no = ? limit 1",
+        )
+        .bind(&bike_no)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten();
+
+        if let Some(r) = bat_row {
+            let b_no = r.try_get::<String, _>("battery_no").unwrap_or_default().trim().to_string();
+            if !b_no.is_empty() {
+                battery_no = Some(b_no);
+            }
+        }
+    }
+
+    Ok(Some(BikeResolveInfo {
+        bike_no,
+        ecu_no,
+        battery_no,
+    }))
+}
 
 #[cfg(test)]
 mod tests {

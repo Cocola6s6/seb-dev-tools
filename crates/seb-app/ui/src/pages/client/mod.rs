@@ -196,6 +196,7 @@ pub fn ClientPage() -> View {
         ctx.device_no.set(last_no.clone());
         ctx.bike_no.set(bike_no.clone());
         if !bike_no.trim().is_empty() {
+            c.bike_no.set(bike_no.clone());
             return;
         }
         let last_no = last_no.clone();
@@ -204,6 +205,7 @@ pub fn ClientPage() -> View {
                 if let Some(bike) = m.get(&last_no) {
                     if !bike.trim().is_empty() {
                         ctx.bike_no.set(bike.clone());
+                        c.bike_no.set(bike.clone());
                     }
                 }
                 if !m.is_empty() {
@@ -432,6 +434,83 @@ pub fn ClientPage() -> View {
         }
     };
 
+    let resolve_input_bike = {
+        let ctx = ctx.clone();
+        move || {
+            let cur_bike = c.bike_no.get_clone().trim().to_string();
+            if cur_bike.is_empty() {
+                return;
+            }
+            let cur_ecu = c.device_no.get_clone();
+            let cur_bound_bike = c.bike_map.get_clone().get(&cur_ecu).cloned().unwrap_or_default();
+            if !cur_ecu.is_empty() && cur_bound_bike == cur_bike {
+                return;
+            }
+            spawn_local(async move {
+                match api::client_resolve_bike(&cur_bike).await {
+                    Ok(Some(info)) => {
+                        let new_ecu = info.ecu_no;
+                        let new_bike = info.bike_no;
+                        let old_owner = c.owner.get_clone();
+
+                        let mut map = c.bike_map.get_clone();
+                        map.insert(new_ecu.clone(), new_bike.clone());
+                        c.bike_map.set(map);
+
+                        c.bike_no.set(new_bike.clone());
+                        c.device_no.set(new_ecu.clone());
+                        ctx.bike_no.set(new_bike.clone());
+                        ctx.device_no.set(new_ecu.clone());
+
+                        if !old_owner.is_empty() && old_owner != new_ecu {
+                            match api::client_rename_device(&old_owner, &new_ecu).await {
+                                Ok(list) => {
+                                    c.devices.set(list);
+                                    c.select(&new_ecu);
+                                }
+                                Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                            }
+                        } else if old_owner.is_empty() {
+                            let mut config = c.config(new_ecu.clone());
+                            config.bike_no = new_bike.clone();
+                            match api::client_update_device(config).await {
+                                Ok(list) => {
+                                    c.devices.set(list);
+                                    c.select(&new_ecu);
+                                }
+                                Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                            }
+                        }
+
+                        if let Some(bat) = info.battery_no {
+                            if !bat.trim().is_empty() && c.battery_no.get_clone().trim().is_empty() {
+                                c.battery_no.set(bat.clone());
+                                ctx.toast(format!("已自动带入车辆关联电池 {bat}"));
+                            }
+                        }
+                        ctx.toast(format!("车辆 {new_bike} 已就绪 (ECU {new_ecu})"));
+                    }
+                    Ok(None) => {
+                        let norm = normalize_ecu_no(&cur_bike);
+                        if !norm.is_empty() && norm.chars().all(|ch| ch.is_ascii_digit()) {
+                            let old_owner = c.owner.get_clone();
+                            c.device_no.set(norm.clone());
+                            ctx.device_no.set(norm.clone());
+                            if !old_owner.is_empty() && old_owner != norm {
+                                let _ = api::client_rename_device(&old_owner, &norm).await;
+                            }
+                            ctx.toast(format!("未查询到关联车辆，已按中控 ECU {norm} 设置"));
+                        } else {
+                            ctx.log_client(format!("【警告】未在数据库查到车辆编号 {cur_bike} 绑定的中控 ECU"), LogLevel::Warn);
+                            ctx.toast(format!("未查到车辆编号 {cur_bike}"));
+                        }
+                    }
+                    Err(e) => ctx.log_client(format!("【错误】查询车辆失败: {e}"), LogLevel::Error),
+                }
+            });
+        }
+    };
+
     view! {
         div(class="client-split-container") {
             div(class="client-split-left") {
@@ -441,7 +520,7 @@ pub fn ClientPage() -> View {
                 div(class="page-head") {
                     div(class="page-title") { "中控客户端" }
                     div(class="page-desc") {
-                        "以中控设备的身份连上 IoT 网关，可同时模拟多台。"
+                        "以车辆中控的身份连上 IoT 网关，填入车辆编号即可上报模拟数据，可同时模拟多台。"
                     }
                 }
 
@@ -453,52 +532,36 @@ pub fn ClientPage() -> View {
                             div(class="section-title") { "中控与网关" }
                             div(class="grid grid-2") {
                                 div(class="field") {
-                                    label { "中控序列号 (ECU)" }
+                                    label {
+                                        span { "车辆编号" }
+                                        (move || {
+                                            let ecu = c.device_no.get_clone();
+                                            if !ecu.trim().is_empty() {
+                                                let title_text = format!("底层通信的中控序列号: {ecu}");
+                                                let badge_text = format!("ECU: {ecu}");
+                                                view! {
+                                                    span(class="device-ecu-badge", title=title_text) {
+                                                        (badge_text)
+                                                    }
+                                                }
+                                            } else {
+                                                view! {}
+                                            }
+                                        })
+                                    }
                                     input(
                                         r#type="text",
-                                        placeholder="9位中控序列号 (如 799497080)",
-                                        bind:value=c.device_no,
-                                        on:blur=move |_| {
-                                            let cur = c.device_no.get_clone();
-                                            let norm = normalize_ecu_no(&cur);
-                                            if norm != cur {
-                                                c.device_no.set(norm.clone());
-                                            }
-                                            let owner = c.owner.get_clone();
-                                            if !norm.is_empty() && !owner.is_empty() && norm != owner {
-                                                let owner_clone = owner.clone();
-                                                let norm_clone = norm.clone();
-                                                spawn_local(async move {
-                                                    match api::client_rename_device(&owner_clone, &norm_clone).await {
-                                                        Ok(list) => {
-                                                            c.devices.set(list);
-                                                            c.select(&norm_clone);
-                                                        }
-                                                        Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
-                                                    }
-                                                });
-                                            }
+                                        placeholder="输入车辆编号 (如 0210001234)",
+                                        bind:value=c.bike_no,
+                                        on:blur={
+                                            let resolve = resolve_input_bike.clone();
+                                            move |_| resolve()
                                         },
-                                        on:keydown=move |ev: web_sys::KeyboardEvent| {
-                                            if ev.key() == "Enter" {
-                                                let cur = c.device_no.get_clone();
-                                                let norm = normalize_ecu_no(&cur);
-                                                if norm != cur {
-                                                    c.device_no.set(norm.clone());
-                                                }
-                                                let owner = c.owner.get_clone();
-                                                if !norm.is_empty() && !owner.is_empty() && norm != owner {
-                                                    let owner_clone = owner.clone();
-                                                    let norm_clone = norm.clone();
-                                                    spawn_local(async move {
-                                                        match api::client_rename_device(&owner_clone, &norm_clone).await {
-                                                            Ok(list) => {
-                                                                c.devices.set(list);
-                                                                c.select(&norm_clone);
-                                                            }
-                                                            Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
-                                                        }
-                                                    });
+                                        on:keydown={
+                                            let resolve = resolve_input_bike.clone();
+                                            move |ev: web_sys::KeyboardEvent| {
+                                                if ev.key() == "Enter" {
+                                                    resolve();
                                                 }
                                             }
                                         }

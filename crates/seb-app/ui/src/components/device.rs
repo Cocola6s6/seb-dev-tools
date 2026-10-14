@@ -1,7 +1,7 @@
 use super::widgets::{render_broken_qr_svg, render_qr_svg};
 use crate::api;
 use crate::state::{
-    elide_middle, host_env_tag, normalize_ecu_no, AppCtx, Page,
+    elide_middle, host_env_tag, AppCtx, Page,
 };
 
 /// 设备列宽度有限，编号超过这个长度就中间省略，完整值留在 title 里
@@ -217,12 +217,34 @@ pub fn device_list(src: DeviceSource) -> View {
         move || {
             let noun = src.noun;
             let list = (src.selected_list)();
+            let rows = (src.rows)();
             let text = if list.is_empty() {
                 let sel = src.selected.get_clone();
                 if sel.trim().is_empty() {
                     return;
                 }
-                sel
+                if src.page == Page::Client {
+                    rows.iter()
+                        .find(|r| r.no == sel)
+                        .and_then(|r| r.qr_label.as_ref())
+                        .filter(|s| !s.trim().is_empty())
+                        .cloned()
+                        .unwrap_or(sel)
+                } else {
+                    sel
+                }
+            } else if src.page == Page::Client {
+                list.iter()
+                    .map(|no| {
+                        rows.iter()
+                            .find(|r| &r.no == no)
+                            .and_then(|r| r.qr_label.as_ref())
+                            .filter(|s| !s.trim().is_empty())
+                            .cloned()
+                            .unwrap_or_else(|| no.clone())
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
             } else {
                 list.join("\n")
             };
@@ -231,9 +253,9 @@ pub fn device_list(src: DeviceSource) -> View {
                 let _ = api::copy_to_clipboard(&text).await;
                 copied.set(true);
                 if count == 1 {
-                    ctx.toast(format!("已复制{noun}序列号：{text}"));
+                    ctx.toast(format!("已复制{noun}编号：{text}"));
                 } else {
-                    ctx.toast(format!("已复制 {count} {noun}序列号到剪贴板"));
+                    ctx.toast(format!("已复制 {count} 个{noun}编号到剪贴板"));
                 }
                 TimeoutFuture::new(1000).await;
                 copied.set(false);
@@ -379,8 +401,28 @@ pub fn device_list(src: DeviceSource) -> View {
                                 res
                             }
                         };
-                        let shown_no = elide_middle(&no, NO_MAX);
-                        let sub = if !connected {
+                        let shown_no = if src.page == Page::Client {
+                            if let Some(label) = &row.qr_label {
+                                if !label.trim().is_empty() {
+                                    elide_middle(label, NO_MAX)
+                                } else {
+                                    elide_middle(&no, NO_MAX)
+                                }
+                            } else {
+                                elide_middle(&no, NO_MAX)
+                            }
+                        } else {
+                            elide_middle(&no, NO_MAX)
+                        };
+                        let sub = if src.page == Page::Client {
+                            if !connected {
+                                format!("{env_label} · ECU: {no} · 未连接")
+                            } else if row.coordinates.is_empty() {
+                                format!("{env_label} · ECU: {no} · 无坐标")
+                            } else {
+                                format!("{env_label} · ECU: {no} · {}", row.coordinates)
+                            }
+                        } else if !connected {
                             format!("{env_label} · 未连接")
                         } else if row.coordinates.is_empty() {
                             format!("{env_label} · 无坐标")
@@ -396,13 +438,19 @@ pub fn device_list(src: DeviceSource) -> View {
                         let finish_edit = {
                             let src = src.clone();
                             let old_no = no.clone();
+                            let cur_label = row.qr_label.clone().unwrap_or_default();
                             move || {
-                                let mut val = editing_val.get_clone().trim().to_string();
-                                if src.page == Page::Client {
-                                    val = normalize_ecu_no(&val);
-                                }
+                                let val = editing_val.get_clone().trim().to_string();
                                 editing_item.set(None);
-                                if !val.is_empty() && val != old_no {
+                                if val.is_empty() {
+                                    return;
+                                }
+                                let is_changed = if src.page == Page::Client && !cur_label.is_empty() {
+                                    val != cur_label
+                                } else {
+                                    val != old_no
+                                };
+                                if is_changed {
                                     if let Some(rename_fn) = &src.rename {
                                         rename_fn(old_no.clone(), val);
                                     }
@@ -414,10 +462,20 @@ pub fn device_list(src: DeviceSource) -> View {
                             editing_item.set(None);
                         };
 
+                        let tooltip_title = if src.page == Page::Client {
+                            if let Some(label) = &row.qr_label {
+                                format!("车辆编号: {label}\n中控序列号 (ECU): {no}\n单击切换当前配置，双击{}", if connected { "断开连接" } else { "连接并登录" })
+                            } else {
+                                format!("设备序列号 (ECU): {no} (未关联车辆)\n单击切换当前配置，双击{}", if connected { "断开连接" } else { "连接并登录" })
+                            }
+                        } else {
+                            format!("{}序列号: {no}\n单击切换当前配置，双击{}", src.noun, if connected { "断开连接" } else { "连接并登录" })
+                        };
+
                         view! {
                             div(
                                 class=cls,
-                                title=if connected { "单击切换当前配置，双击断开连接 (按住 Cmd/Shift 可多选)" } else { "单击切换当前配置，双击连接并登录 (按住 Cmd/Shift 可多选)" },
+                                title=tooltip_title,
                                 on:click=pick,
                                 on:dblclick=dblpick
                             ) {
@@ -434,11 +492,16 @@ pub fn device_list(src: DeviceSource) -> View {
                                                 }
                                             }
                                         };
+                                        let edit_placeholder = if src.page == Page::Client {
+                                            "车辆编号，回车保存".to_string()
+                                        } else {
+                                            format!("{noun}序列号，回车保存")
+                                        };
                                         view! {
                                             div(class="device-add", on:click=move |ev: web_sys::MouseEvent| ev.stop_propagation()) {
                                                 input(
                                                     r#type="text",
-                                                    placeholder=format!("{noun}序列号，回车保存"),
+                                                    placeholder=edit_placeholder,
                                                     bind:value=editing_val,
                                                     on:blur=move |_| on_blur(),
                                                     on:keydown=on_keydown
@@ -447,6 +510,20 @@ pub fn device_list(src: DeviceSource) -> View {
                                         }
                                     } else {
                                         let edit_no = no.clone();
+                                        let edit_init_val = if src.page == Page::Client {
+                                            row.qr_label
+                                                .as_deref()
+                                                .filter(|s| !s.trim().is_empty())
+                                                .unwrap_or(&no)
+                                                .to_string()
+                                        } else {
+                                            no.clone()
+                                        };
+                                        let edit_btn_title = if src.page == Page::Client {
+                                            "编辑车辆编号"
+                                        } else {
+                                            "编辑序列号"
+                                        };
                                         let can_rename = src.rename.is_some();
                                         let remove = remove.clone();
                                         let title_no = no.clone();
@@ -462,13 +539,14 @@ pub fn device_list(src: DeviceSource) -> View {
                                                 div(class="device-actions") {
                                                     (if can_rename {
                                                         let edit_no = edit_no.clone();
+                                                        let edit_init_val = edit_init_val.clone();
                                                         view! {
                                                             button(
                                                                 class="device-btn edit",
-                                                                title="编辑序列号",
+                                                                title=edit_btn_title,
                                                                 on:click=move |ev: web_sys::MouseEvent| {
                                                                     ev.stop_propagation();
-                                                                    editing_val.set(edit_no.clone());
+                                                                    editing_val.set(edit_init_val.clone());
                                                                     editing_item.set(Some(edit_no.clone()));
                                                                     spawn_local(async {
                                                                         TimeoutFuture::new(20).await;

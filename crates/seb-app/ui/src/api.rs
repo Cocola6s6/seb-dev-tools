@@ -553,6 +553,23 @@ pub async fn client_load_batteries() -> Result<Vec<BatteryOptionItem>, String> {
     invoke("client_load_batteries", Empty {}).await
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BikeResolveInfo {
+    pub bike_no: String,
+    pub ecu_no: String,
+    pub battery_no: Option<String>,
+}
+
+pub async fn client_resolve_bike(query: &str) -> Result<Option<BikeResolveInfo>, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct A<'a> {
+        query: &'a str,
+    }
+    invoke("client_resolve_bike", A { query }).await
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BatteryArg<'a> {

@@ -49,6 +49,8 @@ pub struct DeviceConfig {
     pub heartbeat: bool,
     pub auto_reply: bool,
     pub profile: SimProfile,
+    #[serde(default)]
+    pub bike_no: String,
 }
 
 impl Default for DeviceConfig {
@@ -61,6 +63,7 @@ impl Default for DeviceConfig {
             heartbeat: true,
             auto_reply: true,
             profile: SimProfile::default(),
+            bike_no: String::new(),
         }
     }
 }
@@ -150,6 +153,7 @@ pub struct ClientCtx {
     /// 表单当前归属的设备：切设备时先置空，避免把上一台的值写进新设备
     pub owner: Signal<String>,
     pub device_no: Signal<String>,
+    pub bike_no: Signal<String>,
 }
 
 impl ClientCtx {
@@ -182,6 +186,7 @@ impl ClientCtx {
             bike_map: create_signal(std::collections::HashMap::new()),
             owner: create_signal(String::new()),
             device_no: create_signal(String::new()),
+            bike_no: create_signal(String::new()),
         }
     }
 
@@ -211,6 +216,7 @@ impl ClientCtx {
             heartbeat: self.heartbeat.get(),
             auto_reply: self.auto_reply.get(),
             profile: self.profile(),
+            bike_no: self.bike_no.get_clone().trim().to_string(),
         }
     }
 
@@ -246,6 +252,12 @@ impl ClientCtx {
         self.owner.set(String::new());
         self.selected.set(device_no.to_string());
         self.device_no.set(device_no.to_string());
+        let bike_from_map = self
+            .bike_map
+            .get_clone()
+            .get(device_no)
+            .cloned()
+            .unwrap_or_default();
         if let Some(st) = found {
             let c = st.config;
             self.gateway.set(format!("{}:{}", c.host, c.port));
@@ -266,6 +278,19 @@ impl ClientCtx {
             self.acc_on.set(p.acc_on);
             self.deflection_angle.set(p.deflection_angle.to_string());
             self.battery_no.set(p.battery_no);
+            let bike = if !c.bike_no.trim().is_empty() {
+                c.bike_no.trim().to_string()
+            } else {
+                bike_from_map
+            };
+            self.bike_no.set(bike.clone());
+            if !bike.is_empty() {
+                let mut map = self.bike_map.get_clone();
+                map.insert(device_no.to_string(), bike);
+                self.bike_map.set(map);
+            }
+        } else {
+            self.bike_no.set(bike_from_map);
         }
         self.owner.set(device_no.to_string());
     }

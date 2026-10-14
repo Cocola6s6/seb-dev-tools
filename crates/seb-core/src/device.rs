@@ -149,6 +149,8 @@ pub struct DeviceConfig {
     pub heartbeat: bool,
     pub auto_reply: bool,
     pub profile: SimProfile,
+    #[serde(default)]
+    pub bike_no: String,
 }
 
 impl Default for DeviceConfig {
@@ -161,6 +163,7 @@ impl Default for DeviceConfig {
             heartbeat: true,
             auto_reply: true,
             profile: SimProfile::default(),
+            bike_no: String::new(),
         }
     }
 }

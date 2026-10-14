@@ -69,6 +69,7 @@ pub fn run() {
             client::client_send_reply,
             client::client_get_bike_nos,
             client::client_load_batteries,
+            client::client_resolve_bike,
             battery_cmd::battery_defaults,
             battery_cmd::battery_devices,
             battery_cmd::battery_update_device,

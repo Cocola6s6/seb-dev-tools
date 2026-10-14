@@ -269,3 +269,13 @@ pub async fn client_get_bike_nos(device_nos: Vec<String>) -> std::collections::H
 pub async fn client_load_batteries() -> Vec<seb_core::db::BatteryOptionItem> {
     seb_core::db::load_battery_options(&seb_core::config::mysql()).await
 }
+
+#[tauri::command]
+pub async fn client_resolve_bike(query: String) -> Result<Option<seb_core::db::BikeResolveInfo>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(None);
+    }
+    seb_core::db::resolve_bike_or_ecu(&seb_core::config::mysql(), query).await
+}
+
