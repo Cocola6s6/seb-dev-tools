@@ -175,10 +175,13 @@ pub fn ClientPage() -> View {
     create_effect(move || {
         let list = c.selected_list();
         let last_no = list.last().cloned().unwrap_or_else(|| c.selected.get_clone());
-        let map = c.bike_map.get_clone();
-        let bike_no = map.get(&last_no).cloned().unwrap_or_default();
         let battery_no = c.battery_no.get_clone().trim().to_string();
-        let qr_bike_no = bike_no.clone();
+        let bike_input = c.bike_no.get_clone().trim().to_string();
+        let qr_bike_no = if !bike_input.is_empty() {
+            bike_input.clone()
+        } else {
+            c.bike_map.get_clone().get(&last_no).cloned().unwrap_or_default()
+        };
         let qr_selection_seq = qr_selection_seq.clone();
         let seq = qr_selection_seq.get() + 1;
         qr_selection_seq.set(seq);
@@ -194,27 +197,7 @@ pub fn ClientPage() -> View {
             return;
         }
         ctx.device_no.set(last_no.clone());
-        ctx.bike_no.set(bike_no.clone());
-        if !bike_no.trim().is_empty() {
-            c.bike_no.set(bike_no.clone());
-            return;
-        }
-        let last_no = last_no.clone();
-        spawn_local(async move {
-            if let Ok(m) = api::client_get_bike_nos(vec![last_no.clone()]).await {
-                if let Some(bike) = m.get(&last_no) {
-                    if !bike.trim().is_empty() {
-                        ctx.bike_no.set(bike.clone());
-                        c.bike_no.set(bike.clone());
-                    }
-                }
-                if !m.is_empty() {
-                    let mut cur = c.bike_map.get_clone();
-                    cur.extend(m);
-                    c.bike_map.set(cur);
-                }
-            }
-        });
+        ctx.bike_no.set(bike_input);
     });
 
     let conn_btn_text = create_memo(move || {
@@ -434,45 +417,58 @@ pub fn ClientPage() -> View {
         }
     };
 
-    let resolve_input_bike = {
+    let resolve_device_input = {
         let ctx = ctx.clone();
         move || {
-            let cur_bike = c.bike_no.get_clone().trim().to_string();
-            if cur_bike.is_empty() {
+            let input_val = c.device_input.get_clone().trim().to_string();
+            if input_val.is_empty() {
                 return;
             }
-            let cur_ecu = c.device_no.get_clone();
-            let cur_bound_bike = c.bike_map.get_clone().get(&cur_ecu).cloned().unwrap_or_default();
-            if !cur_ecu.is_empty() && cur_bound_bike == cur_bike {
-                return;
-            }
+            let old_owner = c.owner.get_clone();
+
             spawn_local(async move {
-                match api::client_resolve_bike(&cur_bike).await {
+                match api::client_resolve_bike(&input_val).await {
                     Ok(Some(info)) => {
                         let new_ecu = info.ecu_no;
                         let new_bike = info.bike_no;
-                        let old_owner = c.owner.get_clone();
 
                         let mut map = c.bike_map.get_clone();
-                        map.insert(new_ecu.clone(), new_bike.clone());
+                        if !new_bike.is_empty() {
+                            map.insert(new_ecu.clone(), new_bike.clone());
+                        }
                         c.bike_map.set(map);
 
                         c.bike_no.set(new_bike.clone());
+                        c.ecu_no.set(new_ecu.clone());
                         c.device_no.set(new_ecu.clone());
-                        ctx.bike_no.set(new_bike.clone());
+
+                        if !new_bike.is_empty() {
+                            c.device_input.set(new_bike.clone());
+                            ctx.bike_no.set(new_bike.clone());
+                        } else {
+                            c.device_input.set(new_ecu.clone());
+                            ctx.bike_no.set(String::new());
+                        }
                         ctx.device_no.set(new_ecu.clone());
 
                         if !old_owner.is_empty() && old_owner != new_ecu {
                             match api::client_rename_device(&old_owner, &new_ecu).await {
-                                Ok(list) => {
+                                Ok(mut list) => {
+                                    let mut config = c.config(new_ecu.clone());
+                                    config.bike_no = new_bike.clone();
+                                    config.ecu_no = new_ecu.clone();
+                                    if let Ok(updated) = api::client_update_device(config).await {
+                                        list = updated;
+                                    }
                                     c.devices.set(list);
                                     c.select(&new_ecu);
                                 }
                                 Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
                             }
-                        } else if old_owner.is_empty() {
+                        } else {
                             let mut config = c.config(new_ecu.clone());
                             config.bike_no = new_bike.clone();
+                            config.ecu_no = new_ecu.clone();
                             match api::client_update_device(config).await {
                                 Ok(list) => {
                                     c.devices.set(list);
@@ -485,29 +481,73 @@ pub fn ClientPage() -> View {
                         if let Some(bat) = info.battery_no {
                             if !bat.trim().is_empty() && c.battery_no.get_clone().trim().is_empty() {
                                 c.battery_no.set(bat.clone());
-                                ctx.toast(format!("已自动带入车辆关联电池 {bat}"));
+                                ctx.toast(format!("已自动带入关联电池 {bat}"));
                             }
                         }
-                        ctx.toast(format!("车辆 {new_bike} 已就绪 (ECU {new_ecu})"));
+                        if !new_bike.is_empty() {
+                            ctx.toast(format!("车辆 {new_bike} 已就绪 (ECU {new_ecu})"));
+                        } else {
+                            ctx.toast(format!("中控 ECU {new_ecu} 已就绪"));
+                        }
                     }
                     Ok(None) => {
-                        let norm = normalize_ecu_no(&cur_bike);
+                        let norm = normalize_ecu_no(&input_val);
                         if !norm.is_empty() && norm.chars().all(|ch| ch.is_ascii_digit()) {
-                            let old_owner = c.owner.get_clone();
+                            c.bike_no.set(String::new());
+                            c.ecu_no.set(norm.clone());
                             c.device_no.set(norm.clone());
+                            c.device_input.set(norm.clone());
+                            ctx.bike_no.set(String::new());
                             ctx.device_no.set(norm.clone());
+
                             if !old_owner.is_empty() && old_owner != norm {
-                                let _ = api::client_rename_device(&old_owner, &norm).await;
+                                match api::client_rename_device(&old_owner, &norm).await {
+                                    Ok(mut list) => {
+                                        let mut config = c.config(norm.clone());
+                                        config.bike_no = String::new();
+                                        config.ecu_no = norm.clone();
+                                        if let Ok(updated) = api::client_update_device(config).await {
+                                            list = updated;
+                                        }
+                                        c.devices.set(list);
+                                        c.select(&norm);
+                                    }
+                                    Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                                }
+                            } else {
+                                let mut config = c.config(norm.clone());
+                                config.bike_no = String::new();
+                                config.ecu_no = norm.clone();
+                                match api::client_update_device(config).await {
+                                    Ok(list) => {
+                                        c.devices.set(list);
+                                        c.select(&norm);
+                                    }
+                                    Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                                }
                             }
-                            ctx.toast(format!("未查询到关联车辆，已按中控 ECU {norm} 设置"));
+                            ctx.toast(format!("已按中控 ECU {norm} 就绪 (可直接上报)"));
                         } else {
-                            ctx.log_client(format!("【警告】未在数据库查到车辆编号 {cur_bike} 绑定的中控 ECU"), LogLevel::Warn);
-                            ctx.toast(format!("未查到车辆编号 {cur_bike}"));
+                            ctx.log_client(format!("【警告】未查询到车辆编号或有效 ECU 序列号: {input_val}"), LogLevel::Warn);
+                            ctx.toast(format!("未查询到车辆或 ECU: {input_val}"));
                         }
                     }
-                    Err(e) => ctx.log_client(format!("【错误】查询车辆失败: {e}"), LogLevel::Error),
+                    Err(e) => ctx.log_client(format!("【错误】查询失败: {e}"), LogLevel::Error),
                 }
             });
+        }
+    };
+
+    let on_device_input_blur = {
+        let resolve = resolve_device_input.clone();
+        move |_| resolve()
+    };
+    let on_device_input_keydown = {
+        let resolve = resolve_device_input.clone();
+        move |ev: web_sys::KeyboardEvent| {
+            if ev.key() == "Enter" {
+                resolve();
+            }
         }
     };
 
@@ -520,7 +560,7 @@ pub fn ClientPage() -> View {
                 div(class="page-head") {
                     div(class="page-title") { "中控客户端" }
                     div(class="page-desc") {
-                        "以车辆中控的身份连上 IoT 网关，填入车辆编号即可上报模拟数据，可同时模拟多台。"
+                        "以车辆中控身份连上 IoT 网关。输入车辆编号或 ECU 序列号即可模拟上报。"
                     }
                 }
 
@@ -530,69 +570,62 @@ pub fn ClientPage() -> View {
                     div(class="device-main") {
                         div(class="section") {
                             div(class="section-title") { "中控与网关" }
-                            div(class="grid grid-2") {
-                                div(class="field") {
-                                    label {
-                                        span { "车辆编号" }
-                                        (move || {
-                                            let ecu = c.device_no.get_clone();
-                                            if !ecu.trim().is_empty() {
-                                                let title_text = format!("底层通信的中控序列号: {ecu}");
-                                                let badge_text = format!("ECU: {ecu}");
-                                                view! {
-                                                    span(class="device-ecu-badge", title=title_text) {
-                                                        (badge_text)
-                                                    }
-                                                }
-                                            } else {
-                                                view! {}
-                                            }
-                                        })
-                                    }
-                                    input(
-                                        r#type="text",
-                                        placeholder="输入车辆编号 (如 0210001234)",
-                                        bind:value=c.bike_no,
-                                        on:blur={
-                                            let resolve = resolve_input_bike.clone();
-                                            move |_| resolve()
-                                        },
-                                        on:keydown={
-                                            let resolve = resolve_input_bike.clone();
-                                            move |ev: web_sys::KeyboardEvent| {
-                                                if ev.key() == "Enter" {
-                                                    resolve();
+                            div(class="field") {
+                                label(style="display: flex; align-items: center; justify-content: space-between;") {
+                                    span { "车辆或中控编号" }
+                                    (move || {
+                                        let bike = c.bike_no.get_clone();
+                                        let ecu = c.device_no.get_clone();
+                                        if !bike.is_empty() && !ecu.is_empty() && bike != ecu {
+                                            let ecu_title = format!("当前生效中控 ECU: {ecu}");
+                                            let ecu_text = format!("ECU: {ecu}");
+                                            view! {
+                                                span(
+                                                    class="device-matched-tag",
+                                                    title=ecu_title,
+                                                    on:mousedown=move |ev: web_sys::MouseEvent| ev.stop_propagation()
+                                                ) {
+                                                    (ecu_text)
                                                 }
                                             }
+                                        } else {
+                                            view! { span {} }
                                         }
-                                    )
+                                    })
                                 }
-                                div(class="field") {
-                                    label {
-                                        span { "网关地址" }
-                                        div(class="gateway-env-shortcuts") {
-                                            button(
-                                                r#type="button",
-                                                class=move || if c.gateway.get_clone().trim() == gw_inner.get_clone() { "env-chip inner active" } else { "env-chip inner" },
-                                                title="快捷填入内网网关",
-                                                on:click=move |_| c.gateway.set(gw_inner.get_clone())
-                                            ) { "内网" }
-                                            button(
-                                                r#type="button",
-                                                class=move || if c.gateway.get_clone().trim() == gw_test.get_clone() { "env-chip test active" } else { "env-chip test" },
-                                                title="快捷填入外网网关",
-                                                on:click=move |_| c.gateway.set(gw_test.get_clone())
-                                            ) { "外网" }
-                                            button(
-                                                r#type="button",
-                                                class=move || if c.gateway.get_clone().trim() == gw_prod.get_clone() { "env-chip prod active" } else { "env-chip prod" },
-                                                title="快捷填入正式网关",
-                                                on:click=move |_| c.gateway.set(gw_prod.get_clone())
-                                            ) { "正式" }
-                                        }
+                                input(
+                                    r#type="text",
+                                    placeholder="输入车辆编号或 ECU 序列号，失焦/回车就绪",
+                                    bind:value=c.device_input,
+                                    on:blur=on_device_input_blur,
+                                    on:keydown=on_device_input_keydown
+                                )
+                            }
+                            div(class="field", style="margin-top: 14px;") {
+                                label {
+                                    span { "网关地址" }
+                                    div(class="gateway-env-shortcuts") {
+                                        button(
+                                            r#type="button",
+                                            class=move || if c.gateway.get_clone().trim() == gw_inner.get_clone() { "env-chip inner active" } else { "env-chip inner" },
+                                            title="快捷填入内网网关",
+                                            on:click=move |_| c.gateway.set(gw_inner.get_clone())
+                                        ) { "内网" }
+                                        button(
+                                            r#type="button",
+                                            class=move || if c.gateway.get_clone().trim() == gw_test.get_clone() { "env-chip test active" } else { "env-chip test" },
+                                            title="快捷填入外网网关",
+                                            on:click=move |_| c.gateway.set(gw_test.get_clone())
+                                        ) { "外网" }
+                                        button(
+                                            r#type="button",
+                                            class=move || if c.gateway.get_clone().trim() == gw_prod.get_clone() { "env-chip prod active" } else { "env-chip prod" },
+                                            title="快捷填入正式网关",
+                                            on:click=move |_| c.gateway.set(gw_prod.get_clone())
+                                        ) { "正式" }
                                     }
-                                    input(r#type="text", placeholder="域名:端口", bind:value=c.gateway)
                                 }
+                                input(r#type="text", placeholder="域名:端口", bind:value=c.gateway)
                             }
                             div(class="card-actions") {
                                 button(class="primary", on:click=connect) { (conn_btn_text.get_clone()) }

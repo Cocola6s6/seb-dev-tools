@@ -151,6 +151,8 @@ pub struct DeviceConfig {
     pub profile: SimProfile,
     #[serde(default)]
     pub bike_no: String,
+    #[serde(default)]
+    pub ecu_no: String,
 }
 
 impl Default for DeviceConfig {
@@ -164,6 +166,7 @@ impl Default for DeviceConfig {
             auto_reply: true,
             profile: SimProfile::default(),
             bike_no: String::new(),
+            ecu_no: String::new(),
         }
     }
 }

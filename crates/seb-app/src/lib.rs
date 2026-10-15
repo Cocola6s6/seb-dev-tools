@@ -27,6 +27,10 @@ pub fn run() {
             if let Some(main_win) = app.get_webview_window(dock::MAIN_LABEL) {
                 windows::setup_window_minimize(app.handle(), &main_win);
             }
+            #[cfg(debug_assertions)]
+            if let Some(main_win) = app.get_webview_window(dock::MAIN_LABEL) {
+                let _ = main_win.clear_all_browsing_data();
+            }
             Ok(())
         })
         .on_window_event(dock::on_window_event)

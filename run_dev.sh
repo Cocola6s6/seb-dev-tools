@@ -1,6 +1,11 @@
 #!/bin/bash
 # 启动 Rust 版（Tauri + Sycamore）开发模式。
 set -e
+
+# 清理残留开发端口与 WebKit 磁盘缓存，防止加载旧页面
+lsof -ti :1420 | xargs kill -9 2>/dev/null || true
+rm -rf ~/Library/Caches/cn.qkswq.seb.devtools 2>/dev/null || true
+
 cd "$(dirname "$0")/crates/seb-app"
 
 for bin in cargo trunk; do

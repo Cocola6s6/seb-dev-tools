@@ -365,26 +365,41 @@ pub fn ToolboxNavButton() -> View {
                             img(src=qr_data_url, alt="二维码", style="width:176px;height:176px;display:block;")
                         }
                         div(class="nav-qr-foot") {
-                            span(class="qr-bike-no") { (display_no()) }
-                            button(
-                                class=move || if copied.get() { "qr-copy-btn copied" } else { "qr-copy-btn" },
-                                title=move || if copied.get() { "已复制" } else { "复制链接" },
-                                on:click=copy_link
-                            ) {
-                                (if copied.get() {
-                                    view! {
-                                        svg(viewBox="0 0 24 24", width="12", height="12", fill="currentColor") {
-                                            path(d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z") {}
+                            div(class="nav-qr-foot-row") {
+                                span(class="qr-bike-no") { (display_no()) }
+                                button(
+                                    class=move || if copied.get() { "qr-copy-btn copied" } else { "qr-copy-btn" },
+                                    title=move || if copied.get() { "已复制" } else { "复制链接" },
+                                    on:click=copy_link
+                                ) {
+                                    (if copied.get() {
+                                        view! {
+                                            svg(viewBox="0 0 24 24", width="12", height="12", fill="currentColor") {
+                                                path(d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z") {}
+                                            }
                                         }
+                                    } else {
+                                        view! {
+                                            svg(viewBox="0 0 24 24", width="12", height="12", fill="currentColor") {
+                                                path(d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z") {}
+                                            }
+                                        }
+                                    })
+                                }
+                            }
+                            (if !is_battery() {
+                                let dev = ctx.device_no.get_clone();
+                                if !dev.trim().is_empty() {
+                                    let ecu_text = dev.clone();
+                                    view! {
+                                        span(class="qr-ecu-no", title=format!("中控 ECU: {dev}")) { (ecu_text) }
                                     }
                                 } else {
-                                    view! {
-                                        svg(viewBox="0 0 24 24", width="12", height="12", fill="currentColor") {
-                                            path(d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z") {}
-                                        }
-                                    }
-                                })
-                            }
+                                    view! {}
+                                }
+                            } else {
+                                view! {}
+                            })
                         }
                     }
                 }

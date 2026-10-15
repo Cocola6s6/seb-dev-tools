@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>共享单车调试工具</title>
   <style>
     :root {
@@ -359,10 +362,19 @@
       width: 100%;
       position: relative;
       display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      min-height: 20px;
+    }
+    .nav-qr-foot-row {
+      width: 100%;
+      position: relative;
+      display: flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
-      min-height: 20px;
     }
     .qr-bike-no {
       font-family: Menlo, "SF Mono", monospace;
@@ -375,6 +387,19 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .qr-ecu-no {
+      font-family: Menlo, "SF Mono", monospace;
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--muted);
+      text-align: center;
+      min-width: 0;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
     }
     .qr-copy-btn {
       position: absolute;
@@ -816,17 +841,6 @@
     .dev-dot.on { background: var(--accent); border-color: var(--accent); }
     .combo-item .n { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .field > label { display: flex; align-items: center; gap: 2px; }
-    .device-ecu-badge {
-      margin-left: auto;
-      font-size: 11px;
-      font-family: Menlo, "SF Mono", monospace;
-      color: var(--accent);
-      background: var(--glow);
-      padding: 1px 6px;
-      border-radius: 4px;
-      font-weight: 500;
-      border: 1px solid rgba(15, 157, 118, 0.2);
-    }
     /* 中控客户端响应式分屏 (4:6 比例，带平滑抽屉式位移动画) */
     .client-split-container {
       display: flex;
@@ -1102,6 +1116,22 @@
       background: #fef2f2;
       color: #dc2626;
       border-color: rgba(220, 38, 38, 0.4);
+    }
+
+    .device-matched-tag {
+      font-size: 11px;
+      font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+      color: #64748b;
+      background: #f1f5f9;
+      padding: 1px 7px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+      font-weight: 500;
+      -webkit-user-select: text !important;
+      -moz-user-select: text !important;
+      -ms-user-select: text !important;
+      user-select: text !important;
+      cursor: text;
     }
 
     .device-layout {

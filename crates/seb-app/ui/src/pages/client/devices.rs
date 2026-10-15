@@ -114,11 +114,12 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
 
                         if c.devices.get_clone().iter().any(|d| d.config.device_no == ecu) {
                             c.select(&ecu);
-                            ctx.toast(format!("已选中车辆 {bike} (ECU {ecu})"));
+                            ctx.toast(format!("已选中车辆 {bike}"));
                             return;
                         }
                         let mut config = c.config(ecu.clone());
                         config.bike_no = bike.clone();
+                        config.ecu_no = String::new();
                         match api::client_update_device(config).await {
                             Ok(list) => {
                                 c.devices.set(list);
@@ -128,7 +129,7 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                                         c.battery_no.set(bat);
                                     }
                                 }
-                                ctx.toast(format!("已添加车辆 {bike} (ECU {ecu})"));
+                                ctx.toast(format!("已添加车辆 {bike}"));
                             }
                             Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
                         }
@@ -136,12 +137,14 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                     Ok(None) => {
                         let norm = normalize_ecu_no(&input_no);
                         if !norm.is_empty() && norm.chars().all(|ch| ch.is_ascii_digit()) {
-                            let config = c.config(norm.clone());
+                            let mut config = c.config(norm.clone());
+                            config.bike_no = String::new();
+                            config.ecu_no = norm.clone();
                             match api::client_update_device(config).await {
                                 Ok(list) => {
                                     c.devices.set(list);
                                     c.select(&norm);
-                                    ctx.toast(format!("未查到关联车辆，已按中控 ECU {norm} 添加"));
+                                    ctx.toast(format!("已按中控 ECU {norm} 添加"));
                                 }
                                 Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
                             }
@@ -187,8 +190,10 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
 
                         if new_ecu == old_no_clone {
                             c.bike_no.set(new_bike.clone());
+                            c.ecu_no.set(String::new());
                             let mut config = c.config(new_ecu.clone());
                             config.bike_no = new_bike.clone();
+                            config.ecu_no = String::new();
                             if let Ok(list) = api::client_update_device(config).await {
                                 c.devices.set(list);
                             }
@@ -199,6 +204,7 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                             Ok(mut list) => {
                                 let mut config = c.config(new_ecu.clone());
                                 config.bike_no = new_bike.clone();
+                                config.ecu_no = String::new();
                                 if let Ok(updated) = api::client_update_device(config).await {
                                     list = updated;
                                 }
@@ -206,7 +212,7 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                                 if c.selected.get_clone() == old_no_clone {
                                     c.select(&new_ecu);
                                 }
-                                ctx.toast(format!("已更新车辆 {new_bike} (ECU {new_ecu})"));
+                                ctx.toast(format!("已更新车辆 {new_bike}"));
                             }
                             Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
                         }
@@ -215,12 +221,18 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                         let norm = normalize_ecu_no(&new_val);
                         if !norm.is_empty() && norm != old_no_clone {
                             match api::client_rename_device(&old_no_clone, &norm).await {
-                                Ok(list) => {
+                                Ok(mut list) => {
+                                    let mut config = c.config(norm.clone());
+                                    config.bike_no = String::new();
+                                    config.ecu_no = norm.clone();
+                                    if let Ok(updated) = api::client_update_device(config).await {
+                                        list = updated;
+                                    }
                                     c.devices.set(list);
                                     if c.selected.get_clone() == old_no_clone {
                                         c.select(&norm);
                                     }
-                                    ctx.toast(format!("未查询到关联车辆，已按中控 ECU {norm} 更新"));
+                                    ctx.toast(format!("已按中控 ECU {norm} 更新"));
                                 }
                                 Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
                             }

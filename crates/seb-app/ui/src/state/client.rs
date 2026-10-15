@@ -51,6 +51,8 @@ pub struct DeviceConfig {
     pub profile: SimProfile,
     #[serde(default)]
     pub bike_no: String,
+    #[serde(default)]
+    pub ecu_no: String,
 }
 
 impl Default for DeviceConfig {
@@ -64,6 +66,7 @@ impl Default for DeviceConfig {
             auto_reply: true,
             profile: SimProfile::default(),
             bike_no: String::new(),
+            ecu_no: String::new(),
         }
     }
 }
@@ -154,6 +157,8 @@ pub struct ClientCtx {
     pub owner: Signal<String>,
     pub device_no: Signal<String>,
     pub bike_no: Signal<String>,
+    pub ecu_no: Signal<String>,
+    pub device_input: Signal<String>,
 }
 
 impl ClientCtx {
@@ -187,6 +192,8 @@ impl ClientCtx {
             owner: create_signal(String::new()),
             device_no: create_signal(String::new()),
             bike_no: create_signal(String::new()),
+            ecu_no: create_signal(String::new()),
+            device_input: create_signal(String::new()),
         }
     }
 
@@ -217,6 +224,7 @@ impl ClientCtx {
             auto_reply: self.auto_reply.get(),
             profile: self.profile(),
             bike_no: self.bike_no.get_clone().trim().to_string(),
+            ecu_no: self.ecu_no.get_clone().trim().to_string(),
         }
     }
 
@@ -252,12 +260,6 @@ impl ClientCtx {
         self.owner.set(String::new());
         self.selected.set(device_no.to_string());
         self.device_no.set(device_no.to_string());
-        let bike_from_map = self
-            .bike_map
-            .get_clone()
-            .get(device_no)
-            .cloned()
-            .unwrap_or_default();
         if let Some(st) = found {
             let c = st.config;
             self.gateway.set(format!("{}:{}", c.host, c.port));
@@ -278,19 +280,26 @@ impl ClientCtx {
             self.acc_on.set(p.acc_on);
             self.deflection_angle.set(p.deflection_angle.to_string());
             self.battery_no.set(p.battery_no);
-            let bike = if !c.bike_no.trim().is_empty() {
-                c.bike_no.trim().to_string()
-            } else {
-                bike_from_map
-            };
+            let bike = c.bike_no.trim().to_string();
             self.bike_no.set(bike.clone());
-            if !bike.is_empty() {
-                let mut map = self.bike_map.get_clone();
-                map.insert(device_no.to_string(), bike);
-                self.bike_map.set(map);
-            }
+            let ecu = if !c.ecu_no.trim().is_empty() {
+                c.ecu_no.trim().to_string()
+            } else if bike.is_empty() {
+                device_no.to_string()
+            } else {
+                String::new()
+            };
+            self.ecu_no.set(ecu);
+            let display_val = if !bike.is_empty() {
+                bike
+            } else {
+                device_no.to_string()
+            };
+            self.device_input.set(display_val);
         } else {
-            self.bike_no.set(bike_from_map);
+            self.bike_no.set(String::new());
+            self.ecu_no.set(device_no.to_string());
+            self.device_input.set(device_no.to_string());
         }
         self.owner.set(device_no.to_string());
     }

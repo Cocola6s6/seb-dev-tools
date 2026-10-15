@@ -147,6 +147,14 @@ pub fn qr_panel(src: DeviceSource) -> View {
                             let no = no.clone();
                             move |_| (src.toggle_connect)(no.clone())
                         };
+                        let has_ecu = src.page == Page::Client && !no.trim().is_empty();
+                        let ecu_title = format!("中控 ECU: {no}");
+                        let ecu_text = no.clone();
+                        let bike_no_title = if is_damaged {
+                            format!("设备 {no} (未查到关联车辆编号)")
+                        } else {
+                            label.clone()
+                        };
                         view! {
                             div(
                                 class=cls,
@@ -159,16 +167,27 @@ pub fn qr_panel(src: DeviceSource) -> View {
                                     img(src=qr_data_url, alt="二维码", style="width:100%;height:100%;display:block;")
                                 }
                                 div(class="nav-qr-foot") {
-                                    span(class="qr-bike-no", title=if is_damaged { format!("设备 {no} (未查到关联车辆编号)") } else { label.clone() }) { (shown_label) }
-                                    button(
-                                        class=move || if copied.get() { "qr-copy-btn copied" } else { "qr-copy-btn" },
-                                        title=move || if copied.get() { "已复制" } else if is_damaged { "复制设备序列号" } else { "复制链接" },
-                                        on:click=copy_link
-                                    ) {
-                                        svg(viewBox="0 0 24 24", width="12", height="12", fill="currentColor") {
-                                            path(d=move || if copied.get() { ICON_CHECK } else { ICON_COPY }) {}
+                                    div(class="nav-qr-foot-row") {
+                                        span(class="qr-bike-no", title=bike_no_title) { (shown_label) }
+                                        button(
+                                            class=move || if copied.get() { "qr-copy-btn copied" } else { "qr-copy-btn" },
+                                            title=move || if copied.get() { "已复制" } else if is_damaged { "复制设备序列号" } else { "复制链接" },
+                                            on:click=copy_link
+                                        ) {
+                                            svg(viewBox="0 0 24 24", width="12", height="12", fill="currentColor") {
+                                                path(d=move || if copied.get() { ICON_CHECK } else { ICON_COPY }) {}
+                                            }
                                         }
                                     }
+                                    (if has_ecu {
+                                        let ecu_text = ecu_text.clone();
+                                        let ecu_title = ecu_title.clone();
+                                        view! {
+                                            span(class="qr-ecu-no", title=ecu_title) { (ecu_text) }
+                                        }
+                                    } else {
+                                        view! {}
+                                    })
                                 }
                             }
                         }
@@ -340,11 +359,16 @@ pub fn device_list(src: DeviceSource) -> View {
             (move || if adding.get() {
                 let confirm_add = confirm_add.clone();
                 let on_blur = confirm_add.clone();
+                let add_placeholder = if src.page == Page::Client {
+                    "车辆或ECU编号，回车确认".to_string()
+                } else {
+                    format!("{noun}序列号，回车确认")
+                };
                 view! {
                     div(class="device-add") {
                         input(
                             r#type="text",
-                            placeholder=format!("{noun}序列号，回车确认"),
+                            placeholder=add_placeholder,
                             bind:value=new_no,
                             on:blur=move |_| on_blur(),
                             on:keydown=move |ev: web_sys::KeyboardEvent| {
@@ -493,7 +517,7 @@ pub fn device_list(src: DeviceSource) -> View {
                                             }
                                         };
                                         let edit_placeholder = if src.page == Page::Client {
-                                            "车辆编号，回车保存".to_string()
+                                            "车辆或ECU编号，回车保存".to_string()
                                         } else {
                                             format!("{noun}序列号，回车保存")
                                         };

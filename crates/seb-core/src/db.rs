@@ -775,7 +775,8 @@ pub async fn resolve_bike_or_ecu(
         .bind(q)
         .fetch_optional(&pool)
         .await
-        .map_err(|e| format!("查询 bike_ecu_relation_tb 失败: {e}"))?;
+        .ok()
+        .flatten();
 
         if let Some(r) = rel_row {
             let b = r.try_get::<String, _>("bike_no").unwrap_or_default().trim().to_string();

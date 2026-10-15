@@ -63,7 +63,7 @@ const TOAST_MS: u32 = 3000;
 impl AppCtx {
     pub fn new() -> Self {
         Self {
-            page: create_signal(Page::Deploy),
+            page: create_signal(Page::Client),
             is_settings: create_signal(false),
             toolbox_mode: create_signal(ToolboxMode::QrCode),
             egg: create_signal(false),
