@@ -100,7 +100,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install cos-python-sdk-v5
+        run: pip install coscmd cos-python-sdk-v5
 
       - name: Download all release assets
         run: |
