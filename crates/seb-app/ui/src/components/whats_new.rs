@@ -48,22 +48,7 @@ pub fn WhatsNewNotice() -> View {
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "安装包精简收敛" }
-                                "：构建产物精简优化，macOS 仅提供 DMG 安装包，Windows 仅提供 MSI 安装包。"
-                            }
-                        }
-                        div(class="whats-new-item") {
-                            span(class="whats-new-bullet") {}
-                            div(class="whats-new-text") {
-                                span(class="whats-new-label") { "腾讯云 COS 极速自动更新" }
-                                "：接入腾讯云官方 coscli 极速分发与安全验签，支持后台静默检测、下载进度展示及重启生效。"
-                            }
-                        }
-                        div(class="whats-new-item") {
-                            span(class="whats-new-bullet") {}
-                            div(class="whats-new-text") {
-                                span(class="whats-new-label") { "设置页手动检查" }
-                                "：在系统设置中提供「版本与更新」卡片，随时可一键手动检查最新版本与说明。"
+                                "增加版本管理功能"
                             }
                         }
                     }
