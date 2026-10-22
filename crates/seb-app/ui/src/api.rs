@@ -12,6 +12,15 @@ export function tauri_invoke(cmd, args) {
     return window.__TAURI_INTERNALS__.invoke(cmd, args);
 }
 
+export function tauri_listen(event, callback) {
+    if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.event && window.__TAURI_INTERNALS__.event.listen) {
+        return window.__TAURI_INTERNALS__.event.listen(event, (ev) => {
+            callback(JSON.stringify(ev.payload));
+        });
+    }
+    return Promise.resolve(() => {});
+}
+
 export function copy_text(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
         return navigator.clipboard.writeText(text);
@@ -73,6 +82,8 @@ export function has_active_selection() {
 extern "C" {
     #[wasm_bindgen(catch)]
     fn tauri_invoke(cmd: &str, args: JsValue) -> Result<js_sys::Promise, JsValue>;
+    #[wasm_bindgen(catch)]
+    fn tauri_listen(event: &str, callback: &js_sys::Function) -> Result<js_sys::Promise, JsValue>;
     #[wasm_bindgen(catch)]
     fn copy_text(text: &str) -> Result<js_sys::Promise, JsValue>;
     fn js_init_map_picker(container_id: &str, initial_coord: &str, callback: &js_sys::Function);
@@ -646,4 +657,47 @@ pub async fn battery_send_ping(battery_no: String) -> Result<(), String> {
 #[allow(dead_code)]
 pub async fn battery_send_logout(battery_no: String) -> Result<(), String> {
     invoke_void("battery_send_logout", BatteryArg { battery_no: &battery_no }).await
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct UpdateCheckResult {
+    pub has_update: bool,
+    pub current_version: String,
+    pub latest_version: String,
+    pub body: Option<String>,
+    pub date: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct UpdateProgress {
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub percent: Option<f64>,
+    pub stage: String,
+}
+
+pub async fn check_update() -> Result<UpdateCheckResult, String> {
+    invoke("check_update", Empty {}).await
+}
+
+pub async fn download_and_install_update() -> Result<(), String> {
+    invoke_void("download_and_install_update", Empty {}).await
+}
+
+pub async fn restart_app() -> Result<(), String> {
+    invoke_void("restart_app", Empty {}).await
+}
+
+pub fn listen_update_progress<F>(mut callback: F)
+where
+    F: FnMut(UpdateProgress) + 'static,
+{
+    let cb = Closure::wrap(Box::new(move |payload_str: String| {
+        if let Ok(prog) = serde_json::from_str::<UpdateProgress>(&payload_str) {
+            callback(prog);
+        }
+    }) as Box<dyn FnMut(String)>);
+
+    let _ = tauri_listen("updater:progress", cb.as_ref().unchecked_ref());
+    cb.forget();
 }

@@ -7,7 +7,7 @@ mod windows;
 
 use commands::{
     battery as battery_cmd, client, config as config_cmd, deploy, ecu as ecu_cmd, hosts, instance,
-    send, terminal, window as window_cmd, AppState,
+    send, terminal, updater as updater_cmd, window as window_cmd, AppState,
 };
 use tauri::Manager;
 
@@ -16,6 +16,8 @@ pub fn run() {
     let cfg = seb_core::config::load();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::new(cfg))
         .setup(|app| {
             dock::setup(app.handle())?;
@@ -97,6 +99,9 @@ pub fn run() {
             window_cmd::dock_anchor,
             window_cmd::set_dock_qr_selection,
             window_cmd::get_dock_qr_selection,
+            updater_cmd::check_update,
+            updater_cmd::download_and_install_update,
+            updater_cmd::restart_app,
         ])
         .build(tauri::generate_context!())
         .expect("启动共享单车调试工具失败")

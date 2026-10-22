@@ -2363,6 +2363,184 @@
     }
     .dock-copy:hover { color: var(--accent); background: var(--glow); }
 
+    /* Updater Modal Styles */
+    .updater-modal-card {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 420px;
+      max-width: calc(100vw - 36px);
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 16px 40px rgba(16, 24, 40, 0.16), 0 2px 6px rgba(16, 24, 40, 0.05);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      animation: whatsNewPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+      overflow: hidden;
+    }
+    .updater-modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 18px 11px;
+      background: #fafbfd;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .updater-modal-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .updater-badge {
+      font-size: 10px;
+      font-weight: 600;
+      color: #0284c7;
+      background: rgba(2, 132, 199, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.4px;
+    }
+    .updater-modal-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .updater-modal-body {
+      padding: 16px 18px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .updater-version-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+    }
+    .updater-v-chip {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .updater-v-chip.highlight .updater-v-val {
+      color: #0284c7;
+      font-weight: 600;
+    }
+    .updater-v-label {
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .updater-v-val {
+      font-size: 13px;
+      font-weight: 500;
+      font-family: ui-monospace, monospace;
+      color: var(--text);
+    }
+    .updater-arrow {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .updater-notes-box {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: #fdfdfd;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      padding: 10px 12px;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+    .updater-notes-title {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-2);
+    }
+    .updater-notes-content {
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text);
+      white-space: pre-line;
+      user-select: text;
+    }
+    .updater-progress-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .updater-progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: #e2e8f0;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .updater-progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #0284c7, #38bdf8);
+      border-radius: 3px;
+      transition: width 0.15s ease-out;
+    }
+    .updater-status-label {
+      font-size: 11.5px;
+      color: var(--text-2);
+      text-align: center;
+    }
+    .updater-modal-foot {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 10px 18px 14px;
+      background: #ffffff;
+      border-top: 1px solid var(--line-soft);
+    }
+    .updater-btn-secondary {
+      padding: 6px 14px;
+      background: #f1f5f9;
+      color: var(--text-2);
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .updater-btn-secondary:hover {
+      background: #e2e8f0;
+      color: var(--text);
+    }
+    .updater-btn-primary {
+      padding: 6px 18px;
+      background: #0284c7;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .updater-btn-primary:hover {
+      background: #0369a1;
+    }
+    .updater-btn-disabled {
+      padding: 6px 18px;
+      background: #94a3b8;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: not-allowed;
+    }
   </style>
   <script>
     window._AMapSecurityConfig = {

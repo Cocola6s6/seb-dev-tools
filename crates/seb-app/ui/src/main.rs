@@ -6,7 +6,7 @@ mod state;
 
 use components::{
     ConfirmModal, GlobalToast, InfraPill, InstancePill, KnockEgg, LogPane, OnlinePills,
-    ToolboxNavButton, WhatsNewNotice,
+    ToolboxNavButton, UpdaterModal, WhatsNewNotice,
 };
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen::JsCast;
@@ -187,6 +187,12 @@ fn App() -> View {
         }
     });
 
+    // 启动 2.5 秒后静默检查是否有新版本
+    spawn_local(async move {
+        TimeoutFuture::new(2500).await;
+        ctx.trigger_check_update(false);
+    });
+
     let show_pills = move || ctx.page_devices().is_none();
 
     view! {
@@ -232,6 +238,7 @@ fn App() -> View {
             KnockEgg {}
             WhatsNewNotice {}
             ConfirmModal {}
+            UpdaterModal {}
         }
     }
 }

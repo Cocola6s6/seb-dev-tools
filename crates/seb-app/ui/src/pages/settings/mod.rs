@@ -137,6 +137,24 @@ pub fn SettingsPage() -> View {
 
             (move || if sys_view() {
                 view! {
+                    div(class="section") {
+                        div(class="field") {
+                            label { "版本与更新" }
+                            div(class="row align-center", style="gap: 12px; align-items: center;") {
+                                span(style="font-size: 13px; font-weight: 500; font-family: ui-monospace, monospace; color: var(--fg);") {
+                                    (format!("当前版本 v{}", env!("CARGO_PKG_VERSION")))
+                                }
+                                button(
+                                    class="primary",
+                                    style="padding: 4px 12px; font-size: 12px;",
+                                    on:click=move |_| ctx.trigger_check_update(true)
+                                ) {
+                                    "检查新版本"
+                                }
+                            }
+                        }
+                    }
+
                     div(class="section stack") {
                         div(class="field") {
                             label { "三击百宝箱" }

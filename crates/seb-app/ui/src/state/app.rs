@@ -63,6 +63,12 @@ pub struct AppCtx {
     toast_seq: Signal<u32>,
     pub show_whats_new: Signal<bool>,
     pub confirm_modal: Signal<Option<ConfirmModalState>>,
+    pub update_info: Signal<Option<crate::api::UpdateCheckResult>>,
+    pub show_updater: Signal<bool>,
+    pub update_downloading: Signal<bool>,
+    pub update_percent: Signal<Option<f64>>,
+    pub update_status_text: Signal<String>,
+    pub update_ready_to_restart: Signal<bool>,
 }
 
 const MAX_LOGS: usize = 500;
@@ -95,6 +101,12 @@ impl AppCtx {
             toast_seq: create_signal(0),
             show_whats_new: create_signal(false),
             confirm_modal: create_signal(None),
+            update_info: create_signal(None),
+            show_updater: create_signal(false),
+            update_downloading: create_signal(false),
+            update_percent: create_signal(None),
+            update_status_text: create_signal(String::new()),
+            update_ready_to_restart: create_signal(false),
         }
     }
 
@@ -131,6 +143,30 @@ impl AppCtx {
             // 期间又弹了新的，就让新的那个定时器来收
             if seq_sig.get() == seq {
                 msg_sig.set(None);
+            }
+        });
+    }
+
+    pub fn trigger_check_update(&self, manual: bool) {
+        let ctx = *self;
+        spawn_local(async move {
+            if manual {
+                ctx.toast("正在检查新版本...");
+            }
+            match crate::api::check_update().await {
+                Ok(res) => {
+                    if res.has_update {
+                        ctx.update_info.set(Some(res));
+                        ctx.show_updater.set(true);
+                    } else if manual {
+                        ctx.toast(format!("当前已是最新版本 (v{})", res.current_version));
+                    }
+                }
+                Err(e) => {
+                    if manual {
+                        ctx.toast(format!("检查更新失败: {e}"));
+                    }
+                }
             }
         });
     }

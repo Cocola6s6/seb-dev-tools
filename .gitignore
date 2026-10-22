@@ -5,3 +5,6 @@
 crates/seb-app/ui/dist/
 dist/
 **/dist/
+.tauri-keys/
+*.key
+*.key.pub

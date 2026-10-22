@@ -14,6 +14,7 @@ pub mod hosts;
 pub mod instance;
 pub mod send;
 pub mod terminal;
+pub mod updater;
 pub mod window;
 
 pub struct AppState {

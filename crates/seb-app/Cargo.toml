@@ -14,11 +14,13 @@ name = "seb-app"
 path = "src/main.rs"
 
 [dependencies]
-seb-core   = { path = "../seb-core" }
-tauri      = { version = "2", features = ["rustls-tls", "macos-private-api"] }
-serde      = { workspace = true }
-serde_json = { workspace = true }
-tokio      = { workspace = true }
+seb-core             = { path = "../seb-core" }
+tauri                = { version = "2", features = ["rustls-tls", "macos-private-api"] }
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+serde                = { workspace = true }
+serde_json           = { workspace = true }
+tokio                = { workspace = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
