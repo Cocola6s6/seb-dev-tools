@@ -48,22 +48,22 @@ pub fn WhatsNewNotice() -> View {
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "版本自动更新" }
-                                "：接入腾讯云 COS 高速分发，支持增量更新检测与自动安装，告别每次手动发安装包。"
+                                span(class="whats-new-label") { "安装包产物精简" }
+                                "：构建产物精简收敛，macOS 仅提供 DMG 安装包，Windows 仅提供 MSI 安装包。"
                             }
                         }
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "下载进度与平滑重启" }
-                                "：全新设计更新弹窗，支持下载百分比及大小实时显示，安装就绪后一键重启生效。"
+                                span(class="whats-new-label") { "腾讯云 COS 自动更新" }
+                                "：接入腾讯云 COS 增量更新与安全验签，支持后台静默检测、下载进度展示及重启生效。"
                             }
                         }
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
                                 span(class="whats-new-label") { "设置页手动检查" }
-                                "：在系统设置中新增「版本与更新」卡片，随时可一键手动检查新版本与获取更新说明。"
+                                "：在系统设置中提供「版本与更新」卡片，随时可一键手动检查最新版本与说明。"
                             }
                         }
                     }
