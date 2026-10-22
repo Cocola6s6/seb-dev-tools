@@ -20,10 +20,31 @@ def parse_args():
     parser.add_argument("--generate-only", action="store_true", help="Kept for backward compatibility")
     return parser.parse_args()
 
+def extract_notes_from_whats_new():
+    whats_new_file = os.path.join(os.path.dirname(__file__), "..", "crates", "seb-app", "ui", "src", "components", "whats_new.rs")
+    if not os.path.exists(whats_new_file):
+        return ""
+    try:
+        with open(whats_new_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        import re
+        body_match = re.search(r'class="whats-new-body"\)\s*\{([\s\S]*?)\}\s*div\(class="whats-new-foot"', content)
+        if body_match:
+            body_text = body_match.group(1)
+            raw_strs = re.findall(r'"([^"]+)"', body_text)
+            clean = [s.strip() for s in raw_strs if not s.startswith("whats-new-") and s.strip()]
+            if clean:
+                return "\n".join(clean)
+    except Exception as e:
+        print(f"Warning: Failed to extract notes from whats_new.rs: {e}", flush=True)
+    return ""
+
 def generate_latest_json(assets_dir, version, notes):
     """
     根据目录下的更新压缩包及其 .sig 签名，构建/更新 latest.json
     """
+    if not notes:
+        notes = extract_notes_from_whats_new()
     latest_json_path = os.path.join(assets_dir, "latest.json")
     platforms = {}
 

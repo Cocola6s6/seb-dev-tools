@@ -90,7 +90,7 @@ pub fn UpdaterModal() -> View {
                     let notes = create_signal(info.body.unwrap_or_else(|| "包含重要的体验优化和功能改进。".to_string()));
 
                     view! {
-                        div(class="confirm-modal-backdrop", on:click=close)
+                        div(class="updater-modal-backdrop", on:click=close)
                         div(class="updater-modal-card") {
                             div(class="updater-modal-head") {
                                 div(class="updater-modal-title-group") {
