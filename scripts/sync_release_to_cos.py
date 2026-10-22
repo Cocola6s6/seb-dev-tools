@@ -98,7 +98,11 @@ def upload_using_coscmd(assets_dir, secret_id, secret_key, region, bucket):
         "-a", secret_id,
         "-s", secret_key,
         "-b", bucket,
-        "-r", region
+        "-r", region,
+        "-m", "1",
+        "-p", "20",
+        "--timeout", "60",
+        "--retry", "3"
     ]
     subprocess.check_call(cmd_cfg)
 
