@@ -51,6 +51,12 @@ pub fn host_env_tag(s: &GlobalSettings, host: &str) -> (&'static str, &'static s
     }
 }
 
+pub fn is_external_or_prod(s: &GlobalSettings, endpoint: &str) -> bool {
+    let host = gw_host(endpoint);
+    let (tag, _) = host_env_tag(s, host);
+    tag == "外网" || tag == "正式"
+}
+
 /// 设备编号尾号辨识度最高，超长时从中间省略，首尾都留着
 pub fn elide_middle(s: &str, max: usize) -> String {
     let chars: Vec<char> = s.chars().collect();

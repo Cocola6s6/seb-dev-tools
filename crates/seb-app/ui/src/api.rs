@@ -561,13 +561,17 @@ pub struct BikeResolveInfo {
     pub battery_no: Option<String>,
 }
 
-pub async fn client_resolve_bike(query: &str) -> Result<Option<BikeResolveInfo>, String> {
+pub async fn client_resolve_bike(
+    query: &str,
+    gateway: Option<&str>,
+) -> Result<Option<BikeResolveInfo>, String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct A<'a> {
         query: &'a str,
+        gateway: Option<&'a str>,
     }
-    invoke("client_resolve_bike", A { query }).await
+    invoke("client_resolve_bike", A { query, gateway }).await
 }
 
 #[derive(Serialize)]

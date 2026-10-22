@@ -3,7 +3,7 @@ mod devices;
 use crate::actions::run_battery_named;
 use crate::api;
 use crate::components::{Check, InlineMapPicker};
-use crate::state::{AppCtx, LogLevel};
+use crate::state::{is_external_or_prod, AppCtx, LogLevel};
 use gloo_timers::future::TimeoutFuture;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -82,8 +82,40 @@ pub fn BatteryPage() -> View {
             ctx.log_battery("【警告】网关端口不合法", LogLevel::Warn);
             return;
         }
-        for no in targets {
-            connect_single_battery(ctx, no);
+
+        let sets = ctx.global_settings.get_clone();
+        let cur_gw = b.gateway.get_clone();
+        let is_ext = if targets.len() == 1 {
+            is_external_or_prod(&sets, &cur_gw)
+        } else {
+            targets.iter().any(|no| {
+                let dev_cfg = b.config(no.clone());
+                let dev_gw = if dev_cfg.host.trim().is_empty() {
+                    cur_gw.clone()
+                } else {
+                    format!("{}:{}", dev_cfg.host, dev_cfg.port)
+                };
+                is_external_or_prod(&sets, &dev_gw)
+            })
+        };
+
+        let do_connect = {
+            let targets = targets.clone();
+            move || {
+                for no in &targets {
+                    connect_single_battery(ctx, no.clone());
+                }
+            }
+        };
+
+        if is_ext {
+            ctx.show_confirm(
+                "环境登录确认",
+                "设备将在外网/正式登录，请再次确认设备是测试设备",
+                do_connect,
+            );
+        } else {
+            do_connect();
         }
     };
 

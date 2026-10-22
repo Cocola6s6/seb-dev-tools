@@ -5,7 +5,7 @@ use crate::api;
 use crate::components::{
     select_value, Check, Field, InlineMapPicker,
 };
-use crate::state::{normalize_ecu_no, AlarmType, AppCtx, LogLevel};
+use crate::state::{is_external_or_prod, normalize_ecu_no, AlarmType, AppCtx, LogLevel};
 use gloo_timers::future::TimeoutFuture;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -261,14 +261,46 @@ pub fn ClientPage() -> View {
             ctx.log_client("【警告】请先在左侧选择设备", LogLevel::Warn);
             return;
         }
-        if targets.len() == 1 {
-            let no = targets[0].clone();
-            trigger_device_connect(c, ctx, no);
+
+        let sets = ctx.global_settings.get_clone();
+        let cur_gw = c.gateway.get_clone();
+        let is_ext = if targets.len() == 1 {
+            is_external_or_prod(&sets, &cur_gw)
         } else {
-            ctx.log_client(format!("正在批量连接 {} 设备...", targets.len()), LogLevel::Info);
-            for no in targets {
-                connect_single_device(ctx, no);
+            targets.iter().any(|no| {
+                let dev_cfg = c.config(no.clone());
+                let dev_gw = if dev_cfg.host.trim().is_empty() {
+                    cur_gw.clone()
+                } else {
+                    format!("{}:{}", dev_cfg.host, dev_cfg.port)
+                };
+                is_external_or_prod(&sets, &dev_gw)
+            })
+        };
+
+        let do_connect = {
+            let targets = targets.clone();
+            move || {
+                if targets.len() == 1 {
+                    let no = targets[0].clone();
+                    trigger_device_connect(c, ctx, no);
+                } else {
+                    ctx.log_client(format!("正在批量连接 {} 设备...", targets.len()), LogLevel::Info);
+                    for no in &targets {
+                        connect_single_device(ctx, no.clone());
+                    }
+                }
             }
+        };
+
+        if is_ext {
+            ctx.show_confirm(
+                "环境登录确认",
+                "设备将在外网/正式登录，请再次确认设备是测试设备",
+                do_connect,
+            );
+        } else {
+            do_connect();
         }
     };
 
@@ -425,9 +457,10 @@ pub fn ClientPage() -> View {
                 return;
             }
             let old_owner = c.owner.get_clone();
+            let current_gw = c.gateway.get_clone();
 
             spawn_local(async move {
-                match api::client_resolve_bike(&input_val).await {
+                match api::client_resolve_bike(&input_val, Some(&current_gw)).await {
                     Ok(Some(info)) => {
                         let new_ecu = info.ecu_no;
                         let new_bike = info.bike_no;

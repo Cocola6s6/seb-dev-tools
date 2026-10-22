@@ -28,6 +28,13 @@ pub struct DeployOptions {
     pub battery_types: Vec<DeployOptionItem>,
 }
 
+#[derive(Clone)]
+pub struct ConfirmModalState {
+    pub title: String,
+    pub message: String,
+    pub on_confirm: std::rc::Rc<dyn Fn()>,
+}
+
 #[derive(Clone, Copy)]
 pub struct AppCtx {
     pub page: Signal<Page>,
@@ -55,6 +62,7 @@ pub struct AppCtx {
     pub toast_msg: Signal<Option<String>>,
     toast_seq: Signal<u32>,
     pub show_whats_new: Signal<bool>,
+    pub confirm_modal: Signal<Option<ConfirmModalState>>,
 }
 
 const MAX_LOGS: usize = 500;
@@ -86,6 +94,7 @@ impl AppCtx {
             toast_msg: create_signal(None),
             toast_seq: create_signal(0),
             show_whats_new: create_signal(false),
+            confirm_modal: create_signal(None),
         }
     }
 
@@ -124,6 +133,23 @@ impl AppCtx {
                 msg_sig.set(None);
             }
         });
+    }
+
+    pub fn show_confirm(
+        &self,
+        title: impl Into<String>,
+        message: impl Into<String>,
+        on_confirm: impl Fn() + 'static,
+    ) {
+        self.confirm_modal.set(Some(ConfirmModalState {
+            title: title.into(),
+            message: message.into(),
+            on_confirm: std::rc::Rc::new(on_confirm),
+        }));
+    }
+
+    pub fn close_confirm(&self) {
+        self.confirm_modal.set(None);
     }
 
     pub fn current_config(&self) -> AppConfig {

@@ -2,7 +2,7 @@ use crate::actions::run_client_named;
 use crate::api;
 use gloo_timers::future::TimeoutFuture;
 use crate::components::{device_list, qr_panel, DeviceRow, DeviceSource};
-use crate::state::{normalize_ecu_no, qr_url, AppCtx, ClientCtx, LogLevel, Page, DEFAULT_BIKE_QR};
+use crate::state::{is_external_or_prod, normalize_ecu_no, qr_url, AppCtx, ClientCtx, LogLevel, Page, DEFAULT_BIKE_QR};
 use std::rc::Rc;
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -47,7 +47,28 @@ pub(super) fn toggle_device_connect(c: ClientCtx, ctx: AppCtx, no: String) {
             api::client_disconnect(&no).await.map(|_| ())
         });
     } else {
-        trigger_device_connect(c, ctx, no);
+        let sets = ctx.global_settings.get_clone();
+        let dev_cfg = c.config(no.clone());
+        let cur_gw = c.gateway.get_clone();
+        let dev_gw = if dev_cfg.host.trim().is_empty() {
+            cur_gw
+        } else {
+            format!("{}:{}", dev_cfg.host, dev_cfg.port)
+        };
+        let is_ext = is_external_or_prod(&sets, &dev_gw);
+
+        if is_ext {
+            let no = no.clone();
+            ctx.show_confirm(
+                "环境登录确认",
+                "设备将在外网/正式登录，请再次确认设备是测试设备",
+                move || {
+                    trigger_device_connect(c, ctx, no.clone());
+                },
+            );
+        } else {
+            trigger_device_connect(c, ctx, no);
+        }
     }
 }
 
@@ -103,8 +124,9 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
             if input_no.is_empty() {
                 return;
             }
+            let current_gw = c.gateway.get_clone();
             spawn_local(async move {
-                match api::client_resolve_bike(&input_no).await {
+                match api::client_resolve_bike(&input_no, Some(&current_gw)).await {
                     Ok(Some(info)) => {
                         let ecu = info.ecu_no;
                         let bike = info.bike_no;
@@ -179,8 +201,16 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                 return;
             }
             let old_no_clone = old_no.clone();
+            let gw = {
+                let dev_cfg = c.config(old_no.clone());
+                if dev_cfg.host.trim().is_empty() {
+                    c.gateway.get_clone()
+                } else {
+                    format!("{}:{}", dev_cfg.host, dev_cfg.port)
+                }
+            };
             spawn_local(async move {
-                match api::client_resolve_bike(&new_val).await {
+                match api::client_resolve_bike(&new_val, Some(&gw)).await {
                     Ok(Some(info)) => {
                         let new_ecu = info.ecu_no;
                         let new_bike = info.bike_no;

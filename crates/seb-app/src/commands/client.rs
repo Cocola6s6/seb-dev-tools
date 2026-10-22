@@ -240,29 +240,71 @@ pub async fn client_send_reply(
 }
 
 #[tauri::command]
-pub async fn client_get_bike_nos(device_nos: Vec<String>) -> std::collections::HashMap<String, String> {
-    let norm_nos: Vec<String> = device_nos.iter().map(|s| seb_core::normalize_ecu_no(s)).collect();
-    let mut map = seb_core::db::batch_find_bike_nos_by_ecus(&seb_core::config::mysql(), &norm_nos).await;
-    for (orig, norm) in device_nos.iter().zip(norm_nos.iter()) {
-        let norm_s = norm.as_str();
-        if !norm_s.is_empty() {
-            if let Some(bike) = map.get(norm_s).cloned() {
-                if orig != norm_s {
+pub async fn client_get_bike_nos(
+    state: State<'_, AppState>,
+    device_nos: Vec<String>,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    let cfg = seb_core::config::load();
+    let client_cfg = &cfg.settings.client;
+    let control_cfg = &cfg.settings.control;
+    let mut map = std::collections::HashMap::new();
+
+    let mut inner_ecus = Vec::new();
+    let mut jsw_ecus = Vec::new();
+
+    for orig in &device_nos {
+        let norm = seb_core::normalize_ecu_no(orig);
+        if norm.is_empty() {
+            continue;
+        }
+        let gw = state
+            .devices
+            .get(&norm)
+            .map(|l| {
+                let c = l.config();
+                format!("{}:{}", c.host, c.port)
+            })
+            .unwrap_or_else(|_| client_cfg.default_inner_gw.clone());
+
+        if seb_core::config::is_inner_gateway(&gw, client_cfg) {
+            inner_ecus.push(norm);
+        } else {
+            jsw_ecus.push(norm);
+        }
+    }
+
+    // 内网环境使用 MySQL 直连
+    if !inner_ecus.is_empty() {
+        let inner_map = seb_core::db::batch_find_bike_nos_by_ecus(&control_cfg.mysql, &inner_ecus).await;
+        map.extend(inner_map);
+    }
+
+    // 外网和正式环境使用 JSW 方式
+    if !jsw_ecus.is_empty() {
+        let jsw_map = seb_core::jsw::batch_find_bike_nos_by_ecus_with_cfg(&control_cfg.jsw, &jsw_ecus).await;
+        map.extend(jsw_map);
+    }
+
+    for orig in &device_nos {
+        let norm = seb_core::normalize_ecu_no(orig);
+        if !norm.is_empty() {
+            if let Some(bike) = map.get(&norm).cloned() {
+                if orig != &norm {
                     map.insert(orig.clone(), bike);
                 }
             } else {
-                let key = format!("{}{norm_s}", seb_core::redis::DEVICE_SERIAL_NO_PREFIX);
+                let key = format!("{}{norm}", seb_core::redis::DEVICE_SERIAL_NO_PREFIX);
                 if let Ok(Some(bike_no)) = seb_core::redis::get(&key).await {
                     let bike_no = bike_no.trim().to_string();
                     if !bike_no.is_empty() {
-                        map.insert(norm_s.to_string(), bike_no.clone());
+                        map.insert(norm.clone(), bike_no.clone());
                         map.insert(orig.clone(), bike_no);
                     }
                 }
             }
         }
     }
-    map
+    Ok(map)
 }
 
 #[tauri::command]
@@ -271,11 +313,31 @@ pub async fn client_load_batteries() -> Vec<seb_core::db::BatteryOptionItem> {
 }
 
 #[tauri::command]
-pub async fn client_resolve_bike(query: String) -> Result<Option<seb_core::db::BikeResolveInfo>, String> {
+pub async fn client_resolve_bike(
+    query: String,
+    gateway: Option<String>,
+) -> Result<Option<seb_core::db::BikeResolveInfo>, String> {
     let query = query.trim();
     if query.is_empty() {
         return Ok(None);
     }
-    seb_core::db::resolve_bike_or_ecu(&seb_core::config::mysql(), query).await
+
+    let cfg = seb_core::config::load();
+    let client_cfg = &cfg.settings.client;
+    let control_cfg = &cfg.settings.control;
+
+    let target_gw = gateway
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&client_cfg.default_inner_gw);
+
+    if seb_core::config::is_inner_gateway(target_gw, client_cfg) {
+        // 内网环境使用 MySQL 直连
+        seb_core::db::resolve_bike_or_ecu(&control_cfg.mysql, query).await
+    } else {
+        // 外网与正式环境使用 JSW 方式
+        seb_core::jsw::resolve_bike_or_ecu_with_cfg(&control_cfg.jsw, query).await
+    }
 }
 

@@ -30,6 +30,48 @@ impl Default for DeployDefaults {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
+pub struct MysqlConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub database: String,
+}
+
+impl Default for MysqlConfig {
+    fn default() -> Self {
+        Self {
+            host: "10.12.55.40".to_string(),
+            port: 40022,
+            username: "dev_code_test".to_string(),
+            password: "BA6B2030B21A22F7".to_string(),
+            database: "seb_goods_db".to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct JswSettings {
+    pub base_url: String,
+    pub token: String,
+    pub server_code: String,
+    pub database: String,
+}
+
+impl Default for JswSettings {
+    fn default() -> Self {
+        Self {
+            base_url: "https://jsw.gydev.cn".to_string(),
+            token: "jsw_48312d76bbc5e7cc33c1e17543c25a70165551c9".to_string(),
+            server_code: "1006".to_string(),
+            database: "seb_goods_db".to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
 pub struct ClientGlobalSettings {
     pub qr_url_template: String,
     pub default_inner_gw: String,
@@ -257,6 +299,8 @@ pub struct ControlGlobalSettings {
     pub exchange_voice: String,
     pub flink_high_url: String,
     pub flink_iot_url: String,
+    pub mysql: MysqlConfig,
+    pub jsw: JswSettings,
 }
 
 impl Default for ControlGlobalSettings {
@@ -268,6 +312,8 @@ impl Default for ControlGlobalSettings {
             exchange_voice: "seb.voice.command.test".to_string(),
             flink_high_url: "http://10.12.55.240/flink-operator/seb-flink-bike-iot-high/#/overview".to_string(),
             flink_iot_url: "http://10.12.55.240/flink-operator/seb-flink-bike-iot/#/overview".to_string(),
+            mysql: MysqlConfig::default(),
+            jsw: JswSettings::default(),
         }
     }
 }

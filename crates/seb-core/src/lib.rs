@@ -6,6 +6,7 @@ pub mod ecu;
 pub mod flink;
 pub mod frame;
 pub mod hosts;
+pub mod jsw;
 pub mod mq;
 pub mod payload;
 pub mod redis;

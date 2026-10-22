@@ -1,3 +1,4 @@
+mod confirm_modal;
 mod device;
 mod device_bar;
 mod log;
@@ -8,6 +9,7 @@ mod dock;
 mod whats_new;
 mod widgets;
 
+pub use confirm_modal::ConfirmModal;
 pub use device::{device_list, qr_panel, DeviceRow, DeviceSource};
 pub use device_bar::DeviceBar;
 pub use log::{GlobalToast, LogPane, LogSplit};

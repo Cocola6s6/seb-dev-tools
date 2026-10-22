@@ -48,15 +48,22 @@ pub fn WhatsNewNotice() -> View {
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "车辆编号上报" }
-                                "：中控客户端全面支持填入车辆编号，自动解析关联中控 ECU 并带出绑定电池。"
+                                span(class="whats-new-label") { "外网/正式数据查询" }
+                                "：支持通过 JSW 接口查询外网与正式环境真实车辆、ECU 及电池绑定，内网直连与外网正式自动分流。"
                             }
                         }
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "设备列表车辆化" }
-                                "：左侧设备列表优先显示车辆编号，新增、行内修改及快捷复制全面支持车辆编号。"
+                                span(class="whats-new-label") { "数据库配置全局化" }
+                                "：MySQL 直连与 JSW 查询配置整合至中控指令全局设置中，支持自定义配置并可一键恢复默认。"
+                            }
+                        }
+                        div(class="whats-new-item") {
+                            span(class="whats-new-bullet") {}
+                            div(class="whats-new-text") {
+                                span(class="whats-new-label") { "环境登录二次确认" }
+                                "：中控与电池客户端在外网与正式环境连接时增加二次安全确认，弹窗颜色自动契合当前模块主题色。"
                             }
                         }
                     }

@@ -1,7 +1,7 @@
 use crate::actions::run_battery_named;
 use crate::api;
 use crate::components::{device_list, qr_panel, DeviceRow, DeviceSource};
-use crate::state::{qr_url, AppCtx, BatteryCtx, LogLevel, Page, DEFAULT_BATTERY_QR};
+use crate::state::{is_external_or_prod, qr_url, AppCtx, BatteryCtx, LogLevel, Page, DEFAULT_BATTERY_QR};
 use std::rc::Rc;
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -41,7 +41,28 @@ pub(super) fn toggle_battery_connect(b: BatteryCtx, ctx: AppCtx, no: String) {
             api::battery_disconnect(&no).await.map(|_| ())
         });
     } else {
-        trigger_battery_connect(b, ctx, no);
+        let sets = ctx.global_settings.get_clone();
+        let dev_cfg = b.config(no.clone());
+        let cur_gw = b.gateway.get_clone();
+        let dev_gw = if dev_cfg.host.trim().is_empty() {
+            cur_gw
+        } else {
+            format!("{}:{}", dev_cfg.host, dev_cfg.port)
+        };
+        let is_ext = is_external_or_prod(&sets, &dev_gw);
+
+        if is_ext {
+            let no = no.clone();
+            ctx.show_confirm(
+                "环境登录确认",
+                "设备将在外网/正式登录，请再次确认设备是测试设备",
+                move || {
+                    trigger_battery_connect(b, ctx, no.clone());
+                },
+            );
+        } else {
+            trigger_battery_connect(b, ctx, no);
+        }
     }
 }
 

@@ -5,8 +5,8 @@ mod pages;
 mod state;
 
 use components::{
-    GlobalToast, InfraPill, InstancePill, KnockEgg, LogPane, OnlinePills, ToolboxNavButton,
-    WhatsNewNotice,
+    ConfirmModal, GlobalToast, InfraPill, InstancePill, KnockEgg, LogPane, OnlinePills,
+    ToolboxNavButton, WhatsNewNotice,
 };
 use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen::JsCast;
@@ -231,6 +231,7 @@ fn App() -> View {
             GlobalToast {}
             KnockEgg {}
             WhatsNewNotice {}
+            ConfirmModal {}
         }
     }
 }

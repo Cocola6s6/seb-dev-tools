@@ -39,7 +39,11 @@ impl Default for MysqlConfig {
 }
 
 pub fn mysql() -> MysqlConfig {
-    MysqlConfig::default()
+    load().settings.control.mysql
+}
+
+pub fn jsw() -> JswSettings {
+    load().settings.control.jsw
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -64,6 +68,26 @@ impl Default for DeployDefaults {
             battery_type_id: 0,
             has_helmet: true,
             has_trunk: true,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct JswSettings {
+    pub base_url: String,
+    pub token: String,
+    pub server_code: String,
+    pub database: String,
+}
+
+impl Default for JswSettings {
+    fn default() -> Self {
+        Self {
+            base_url: "https://jsw.gydev.cn".to_string(),
+            token: "jsw_48312d76bbc5e7cc33c1e17543c25a70165551c9".to_string(),
+            server_code: "1006".to_string(),
+            database: "seb_goods_db".to_string(),
         }
     }
 }
@@ -100,6 +124,18 @@ impl Default for ClientGlobalSettings {
             payload: ClientPayloadSettings::default(),
         }
     }
+}
+
+pub fn is_inner_gateway(gw: &str, client_cfg: &ClientGlobalSettings) -> bool {
+    let gw_trimmed = gw.trim().to_lowercase();
+    if gw_trimmed.is_empty() {
+        return true;
+    }
+    let inner_gw = client_cfg.default_inner_gw.trim().to_lowercase();
+    if !inner_gw.is_empty() && gw_trimmed == inner_gw {
+        return true;
+    }
+    gw_trimmed.contains("inner") || gw_trimmed.ends_with(":32405") || gw_trimmed.ends_with(":32402")
 }
 
 /// 中控上报报文里的各项取值。常用的几个在主功能页上，其余写死在组包函数里的挪到这里。
@@ -300,6 +336,8 @@ pub struct ControlGlobalSettings {
     pub exchange_voice: String,
     pub flink_high_url: String,
     pub flink_iot_url: String,
+    pub mysql: MysqlConfig,
+    pub jsw: JswSettings,
 }
 
 impl Default for ControlGlobalSettings {
@@ -311,6 +349,8 @@ impl Default for ControlGlobalSettings {
             exchange_voice: "seb.voice.command.test".to_string(),
             flink_high_url: "http://10.12.55.240/flink-operator/seb-flink-bike-iot-high/#/overview".to_string(),
             flink_iot_url: "http://10.12.55.240/flink-operator/seb-flink-bike-iot/#/overview".to_string(),
+            mysql: MysqlConfig::default(),
+            jsw: JswSettings::default(),
         }
     }
 }
