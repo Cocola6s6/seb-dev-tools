@@ -109,7 +109,7 @@ jobs:
       - name: Configure coscli
         run: |
           coscli config set --init-skip --secret_id "${COS_SECRET_ID}" --secret_key "${COS_SECRET_KEY}"
-          coscli config add --init-skip -b "${COS_BUCKET}" -r "${COS_REGION}" -a "default"
+          coscli config add --init-skip -b "${COS_BUCKET}" -r "${COS_REGION}" -a "default" || true
 
       - name: Download all release assets
         run: |
@@ -122,6 +122,6 @@ jobs:
 
       - name: Sync to Tencent COS via coscli
         run: |
-          coscli sync release-assets/ cos://default/seb-dev-tools/releases/ -r --acl public-read
+          coscli cp release-assets/ cos://default/seb-dev-tools/releases/ -r --acl public-read
 
 
