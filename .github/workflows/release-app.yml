@@ -84,7 +84,7 @@ jobs:
     name: Sync Release to Tencent COS
     needs: build-tauri
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
@@ -99,15 +99,29 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install coscmd cos-python-sdk-v5
+      - name: Install coscli (Tencent Official Go CLI)
+        run: |
+          COSCLI_VERSION="v1.0.9"
+          curl -LsSf -o /usr/local/bin/coscli "https://github.com/tencentyun/coscli/releases/download/${COSCLI_VERSION}/coscli-${COSCLI_VERSION}-linux-amd64"
+          chmod +x /usr/local/bin/coscli
+          coscli --version
+
+      - name: Configure coscli
+        run: |
+          coscli config set --init-skip --secret_id "${COS_SECRET_ID}" --secret_key "${COS_SECRET_KEY}"
+          coscli config add --init-skip -b "${COS_BUCKET}" -r "${COS_REGION}" -a "default"
 
       - name: Download all release assets
         run: |
           mkdir -p release-assets
           gh release download ${{ github.ref_name }} --dir release-assets
 
-      - name: Sync to Tencent COS
+      - name: Generate latest.json
         run: |
-          python scripts/sync_release_to_cos.py --dir release-assets --version ${{ github.ref_name }}
+          python scripts/sync_release_to_cos.py --dir release-assets --version ${{ github.ref_name }} --generate-only
+
+      - name: Sync to Tencent COS via coscli
+        run: |
+          coscli sync release-assets/ cos://default/seb-dev-tools/releases/ -r --acl public-read
+
 

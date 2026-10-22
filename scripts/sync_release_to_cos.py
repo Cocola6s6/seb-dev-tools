@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument("--dir", default="./release-assets", help="Directory containing release files")
     parser.add_argument("--version", required=True, help="Release version without leading v (e.g. 0.4.1)")
     parser.add_argument("--notes", default="", help="Release notes markdown/text")
+    parser.add_argument("--generate-only", action="store_true", help="Only generate latest.json without uploading")
     return parser.parse_args()
 
 def generate_latest_json(assets_dir, version, notes):
@@ -174,6 +175,10 @@ def main():
         sys.exit(1)
 
     generate_latest_json(args.dir, args.version, args.notes)
+    if args.generate_only:
+        print("latest.json generation finished (--generate-only)", flush=True)
+        return
+
     upload_to_cos(args.dir)
     print("All release assets successfully synced to Tencent COS!", flush=True)
 
