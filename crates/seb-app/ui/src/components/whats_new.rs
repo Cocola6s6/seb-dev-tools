@@ -48,22 +48,22 @@ pub fn WhatsNewNotice() -> View {
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "外网/正式数据查询" }
-                                "：支持通过 JSW 接口查询外网与正式环境真实车辆、ECU 及电池绑定，内网直连与外网正式自动分流。"
+                                span(class="whats-new-label") { "版本自动更新" }
+                                "：接入腾讯云 COS 高速分发，支持增量更新检测与自动安装，告别每次手动发安装包。"
                             }
                         }
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "数据库配置全局化" }
-                                "：MySQL 直连与 JSW 查询配置整合至中控指令全局设置中，支持自定义配置并可一键恢复默认。"
+                                span(class="whats-new-label") { "下载进度与平滑重启" }
+                                "：全新设计更新弹窗，支持下载百分比及大小实时显示，安装就绪后一键重启生效。"
                             }
                         }
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                span(class="whats-new-label") { "环境登录二次确认" }
-                                "：中控与电池客户端在外网与正式环境连接时增加二次安全确认，弹窗颜色自动契合当前模块主题色。"
+                                span(class="whats-new-label") { "设置页手动检查" }
+                                "：在系统设置中新增「版本与更新」卡片，随时可一键手动检查新版本与获取更新说明。"
                             }
                         }
                     }
