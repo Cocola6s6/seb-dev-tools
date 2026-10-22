@@ -8,3 +8,4 @@ dist/
 .tauri-keys/
 *.key
 *.key.pub
+coscli_output/
