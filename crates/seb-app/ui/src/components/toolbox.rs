@@ -43,6 +43,18 @@ pub fn EggWindow() -> View {
     view! { KnockEgg {} }
 }
 
+fn is_image_url(url: &str) -> bool {
+    let raw = url.split('?').next().unwrap_or(url).trim().to_lowercase();
+    raw.ends_with(".png")
+        || raw.ends_with(".jpg")
+        || raw.ends_with(".jpeg")
+        || raw.ends_with(".gif")
+        || raw.ends_with(".webp")
+        || raw.ends_with(".svg")
+        || raw.ends_with(".bmp")
+        || raw.ends_with(".ico")
+}
+
 #[component]
 pub fn KnockEgg() -> View {
     let ctx = use_context::<AppCtx>();
@@ -55,8 +67,10 @@ pub fn KnockEgg() -> View {
         if ctx.egg.get() {
             ready.set(false);
             knocked.set(false);
-            failed.set(false);
-            picked.set(pick_egg(&ctx.global_settings.get_clone().egg_url));
+            let url = pick_egg(&ctx.global_settings.get_clone().egg_url);
+            let is_img = is_image_url(&url);
+            failed.set(!is_img);
+            picked.set(url);
             spawn_local(async move {
                 TimeoutFuture::new(EGG_KNOCK_MS).await;
                 knocked.set(true);

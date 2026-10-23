@@ -115,18 +115,54 @@ if (Get-Command stern -ErrorAction SilentlyContinue) {{
 
 #[tauri::command]
 pub fn open_external_url(url: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = Command::new("open").arg(&url).spawn();
+    let mut target = url.trim().to_string();
+    if target.is_empty() {
+        return Ok(());
     }
+
+    // 若未包含协议头但形如网址，自动补全 https:// 避免 Windows 将其当作本地相对路径导致找不到程序
+    if !target.contains("://") && (target.starts_with("www.") || target.contains('.')) {
+        target = format!("https://{target}");
+    }
+
+    // 优先使用跨平台标准库 open（Windows 下直接调用 Win32 ShellExecute 调起默认浏览器，避免 cmd 黑窗与 & 字符截断问题）
+    if let Ok(()) = open::that_detached(&target) {
+        return Ok(());
+    }
+
     #[cfg(target_os = "windows")]
     {
-        let _ = Command::new("cmd").args(["/c", "start", "", &url]).spawn();
+        // 兜底方案 1: rundll32 url.dll,FileProtocolHandler
+        if Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &target])
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        // 兜底方案 2: explorer.exe 直接打开 URL
+        if Command::new("explorer").arg(&target).spawn().is_ok() {
+            return Ok(());
+        }
+
+        // 兜底方案 3: powershell Start-Process
+        let script = format!("Start-Process '{}'", target.replace('\'', "''"));
+        let _ = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .spawn();
     }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("open").arg(&target).spawn();
+    }
+
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("xdg-open").arg(&url).spawn();
+        let _ = Command::new("xdg-open").arg(&target).spawn();
     }
+
     Ok(())
 }
 
