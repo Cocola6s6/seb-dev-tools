@@ -1394,6 +1394,78 @@
     }
     button.link:hover { background: none; text-decoration: underline; }
     button.link:active { transform: scale(0.96); filter: brightness(0.9); }
+
+    /* 三击百宝箱功能切换条（复刻顶部功能条滑块效果） */
+    .triple-nav-bar {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      padding: 3px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      box-shadow: 0 1px 6px rgba(16, 24, 40, 0.05);
+      width: fit-content;
+      user-select: none;
+    }
+    .triple-nav-track {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .triple-nav-indicator {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 108px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 2px 10px var(--glow);
+      transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.2, 1.05), background 0.3s ease, box-shadow 0.3s ease;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .triple-nav-track.active-0 .triple-nav-indicator { transform: translateX(0px); }
+    .triple-nav-track.active-1 .triple-nav-indicator { transform: translateX(111px); }
+
+    button.triple-nav-item,
+    button.triple-nav-item:hover,
+    button.triple-nav-item:active,
+    button.triple-nav-item:focus {
+      position: relative;
+      z-index: 2;
+      width: 108px;
+      height: 26px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      color: var(--text-2);
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      outline: none !important;
+      border-radius: 999px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.22s ease, transform 0.12s ease;
+      user-select: none;
+    }
+    button.triple-nav-item:hover {
+      color: var(--text);
+    }
+    button.triple-nav-item.active {
+      color: #ffffff !important;
+      font-weight: 600;
+    }
+    button.triple-nav-item:active {
+      transform: scale(0.96);
+    }
     button.icon-btn {
       display: inline-flex;
       align-items: center;

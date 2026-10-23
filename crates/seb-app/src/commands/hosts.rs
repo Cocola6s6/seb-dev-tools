@@ -14,6 +14,14 @@ pub async fn switch_hosts(state: State<'_, AppState>) -> Result<String, String> 
     done
 }
 
+/// 从光宇内部配置中心拉取最新 hosts 数据
+#[tauri::command]
+pub async fn sync_remote_hosts() -> Result<seb_core::hosts::RemoteHostsSyncResult, String> {
+    seb_core::hosts::fetch_gy_hosts()
+        .await
+        .map_err(|e| format!("同步光宇 Hosts 失败: {e}"))
+}
+
 async fn rotate(state: &AppState) -> Result<String, String> {
     let sets = {
         let publisher = state.publisher.lock().await;

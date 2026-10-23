@@ -4,7 +4,6 @@ mod control;
 mod deploy;
 
 use crate::api;
-use crate::components::select_value;
 use crate::state::{
     AppCtx, DeployDefaults, GlobalSettings, Page, ToolboxMode, TripleClickAction,
 };
@@ -27,6 +26,7 @@ pub fn SettingsPage() -> View {
     let hosts_uat = create_signal(String::new());
     let hosts_prod = create_signal(String::new());
     let hosts_free = create_signal(false);
+    let hosts_syncing = create_signal(false);
 
     let check_hosts_free = move || {
         spawn_local(async move {
@@ -47,6 +47,45 @@ pub fn SettingsPage() -> View {
                 }
                 Err(e) => ctx.toast(format!("操作失败: {e}")),
             }
+        });
+    };
+
+    let sync_hosts = move |_| {
+        if hosts_syncing.get() {
+            return;
+        }
+        hosts_syncing.set(true);
+        spawn_local(async move {
+            match api::sync_remote_hosts().await {
+                Ok(res) => {
+                    hosts_inner.set(res.inner.clone());
+                    hosts_uat.set(res.uat.clone());
+
+                    let mut cfg = ctx.current_config();
+                    cfg.deploy = deploy.collect();
+                    let settings = GlobalSettings {
+                        client: client.collect(),
+                        battery: battery.collect(),
+                        control: control.collect(),
+                        egg_url: egg_url.get_clone().trim().to_string(),
+                        triple_click: triple_click.get(),
+                        hosts_inner: res.inner,
+                        hosts_uat: res.uat,
+                        hosts_prod: hosts_prod.get_clone(),
+                    };
+                    cfg.settings = settings.clone();
+                    ctx.global_settings.set(settings);
+                    ctx.cfg.set(cfg.clone());
+                    let _ = api::save_config(&cfg).await;
+
+                    ctx.toast(format!(
+                        "已成功同步光宇 Hosts（内网 {} 条，外网 {} 条）",
+                        res.inner_count, res.uat_count
+                    ));
+                }
+                Err(e) => ctx.toast(format!("同步光宇 Hosts 失败: {e}")),
+            }
+            hosts_syncing.set(false);
         });
     };
 
@@ -148,7 +187,7 @@ pub fn SettingsPage() -> View {
                                 ) {
                                     "检查新版本"
                                 }
-                                span(style="font-size: 13px; font-weight: 500; font-family: ui-monospace, monospace; color: var(--fg);") {
+                                span(style="font-size: 13px; color: var(--text-2);") {
                                     (format!("当前版本 v{}", env!("CARGO_PKG_VERSION")))
                                 }
                             }
@@ -158,21 +197,25 @@ pub fn SettingsPage() -> View {
                     div(class="section stack") {
                         div(class="field") {
                             label { "三击百宝箱" }
-                            select(
-                                class="w-lg",
-                                on:change=move |ev| triple_click.set(match select_value(ev).as_str() {
-                                    "hosts" => TripleClickAction::Hosts,
-                                    _ => TripleClickAction::Egg,
-                                })
-                            ) {
-                                option(
-                                    value="egg",
-                                    selected=move || triple_click.get() == TripleClickAction::Egg
-                                ) { "敲鸡蛋" }
-                                option(
-                                    value="hosts",
-                                    selected=move || triple_click.get() == TripleClickAction::Hosts
-                                ) { "切换本地 host" }
+                            div(class="triple-nav-bar") {
+                                div(class=move || {
+                                    let idx = if triple_click.get() == TripleClickAction::Hosts { 1 } else { 0 };
+                                    format!("triple-nav-track active-{}", idx)
+                                }) {
+                                    div(class="triple-nav-indicator") {}
+                                    button(
+                                        class=move || if triple_click.get() == TripleClickAction::Egg { "triple-nav-item active" } else { "triple-nav-item" },
+                                        on:click=move |_| triple_click.set(TripleClickAction::Egg)
+                                    ) {
+                                        "敲鸡蛋"
+                                    }
+                                    button(
+                                        class=move || if triple_click.get() == TripleClickAction::Hosts { "triple-nav-item active" } else { "triple-nav-item" },
+                                        on:click=move |_| triple_click.set(TripleClickAction::Hosts)
+                                    ) {
+                                        "切换本地 host"
+                                    }
+                                }
                             }
                         }
 
@@ -184,8 +227,18 @@ pub fn SettingsPage() -> View {
                                 }
                             },
                             TripleClickAction::Hosts => view! {
-                                div(class="row") {
-                                    button(on:click=toggle_hosts_free) {
+                                div(class="row align-center", style="gap: 10px; align-items: center;") {
+                                    button(
+                                        style="padding: 4px 14px; font-size: 12px;",
+                                        disabled=hosts_syncing.get(),
+                                        on:click=sync_hosts
+                                    ) {
+                                        (move || if hosts_syncing.get() { "正在同步..." } else { "同步光宇 Hosts" })
+                                    }
+                                    button(
+                                        style="padding: 4px 14px; font-size: 12px;",
+                                        on:click=toggle_hosts_free
+                                    ) {
                                         (move || if hosts_free.get() { "取消免密" } else { "免密授权" })
                                     }
                                 }

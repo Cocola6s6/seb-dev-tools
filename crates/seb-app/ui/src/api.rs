@@ -228,6 +228,18 @@ pub async fn set_hosts_free(enable: bool) -> Result<(), String> {
     invoke_void("set_hosts_free", A { enable }).await
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteHostsSyncResult {
+    pub inner: String,
+    pub uat: String,
+    pub inner_count: usize,
+    pub uat_count: usize,
+}
+
+pub async fn sync_remote_hosts() -> Result<RemoteHostsSyncResult, String> {
+    invoke("sync_remote_hosts", Empty {}).await
+}
+
 pub fn init_map_picker(container_id: &str, initial_coord: &str, on_pick: impl Fn(String) + 'static) {
     let cb = Closure::wrap(Box::new(move |coord: String| {
         on_pick(coord);

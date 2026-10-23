@@ -1,5 +1,6 @@
 //! 本地 hosts 的托管块。只改 START/END 之间的内容，用户自己写的行原样保留
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub const DEFAULT_HOSTS_INNER: &str = include_str!("inner.hosts");
@@ -7,6 +8,123 @@ pub const DEFAULT_HOSTS_UAT: &str = include_str!("uat.hosts");
 
 const START: &str = "# Added by GY TOOLS HOSTS START";
 const END: &str = "# Added by GY TOOLS HOSTS END";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteHostsSyncResult {
+    pub inner: String,
+    pub uat: String,
+    pub inner_count: usize,
+    pub uat_count: usize,
+}
+
+#[derive(Deserialize)]
+struct GyHostApiResponse {
+    code: i32,
+    #[serde(default)]
+    message: String,
+    #[serde(default)]
+    data: Vec<GySystemItem>,
+}
+
+#[derive(Deserialize)]
+struct GySystemItem {
+    #[serde(default)]
+    system_name: String,
+    #[serde(default)]
+    system_line: String,
+    #[serde(default)]
+    gateway_list: Vec<GyGatewayItem>,
+}
+
+#[derive(Deserialize)]
+struct GyGatewayItem {
+    #[serde(default)]
+    gateway_name: String,
+    #[serde(default)]
+    host_list: Vec<GyHostEntry>,
+}
+
+#[derive(Deserialize)]
+struct GyHostEntry {
+    #[serde(default)]
+    ip: String,
+    #[serde(default)]
+    mark: String,
+}
+
+/// 从光宇内部接口拉取最新全量 hosts 配置，并解析出内网（sit）与外网（uat）分组
+pub async fn fetch_gy_hosts() -> anyhow::Result<RemoteHostsSyncResult> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    let res = client
+        .get("http://i.gydev.cn/gytools/user/host/list")
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<GyHostApiResponse>()
+        .await?;
+
+    if res.code != 0 {
+        anyhow::bail!("获取光宇 Hosts 失败: {}", res.message);
+    }
+
+    let mut inner_lines = Vec::new();
+    let mut uat_lines = Vec::new();
+    let mut inner_count = 0;
+    let mut uat_count = 0;
+
+    for sys in res.data {
+        let line = sys.system_line.trim();
+        let name = sys.system_name.trim();
+
+        let mut sys_inner = Vec::new();
+        let mut sys_uat = Vec::new();
+
+        for gw in sys.gateway_list {
+            let domain = gw.gateway_name.trim();
+            if domain.is_empty() {
+                continue;
+            }
+            for h in gw.host_list {
+                let ip = h.ip.trim();
+                if ip.is_empty() {
+                    continue;
+                }
+                match h.mark.as_str() {
+                    "sit" => {
+                        sys_inner.push(format!("{:<16}{}", ip, domain));
+                        inner_count += 1;
+                    }
+                    "uat" => {
+                        sys_uat.push(format!("{:<16}{}", ip, domain));
+                        uat_count += 1;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if !sys_inner.is_empty() {
+            inner_lines.push(format!("# GY TOOLS GROUP: env_sit_{line}_{name}"));
+            inner_lines.extend(sys_inner);
+            inner_lines.push(String::new());
+        }
+
+        if !sys_uat.is_empty() {
+            uat_lines.push(format!("# GY TOOLS GROUP: env_uat_{line}_{name}"));
+            uat_lines.extend(sys_uat);
+            uat_lines.push(String::new());
+        }
+    }
+
+    Ok(RemoteHostsSyncResult {
+        inner: inner_lines.join("\n").trim().to_string(),
+        uat: uat_lines.join("\n").trim().to_string(),
+        inner_count,
+        uat_count,
+    })
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HostsEnv {
@@ -129,5 +247,16 @@ mod tests {
         assert_eq!(detect("1.1.1.1 a.cn", "\n1.1.1.1  a.cn\n\n", "x", ""), Some(HostsEnv::Inner));
         assert_eq!(detect("", "a", "b", ""), Some(HostsEnv::Prod));
         assert_eq!(detect("zzz", "a", "b", ""), None);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_gy_hosts() {
+        // 如果在光宇内网环境，可以验证真实拉取与解析
+        if let Ok(res) = fetch_gy_hosts().await {
+            assert!(res.inner_count > 0);
+            assert!(res.uat_count > 0);
+            assert!(res.inner.contains("env_sit_"));
+            assert!(res.uat.contains("env_uat_"));
+        }
     }
 }

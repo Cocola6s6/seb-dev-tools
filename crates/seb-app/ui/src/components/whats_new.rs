@@ -48,7 +48,7 @@ pub fn WhatsNewNotice() -> View {
                         div(class="whats-new-item") {
                             span(class="whats-new-bullet") {}
                             div(class="whats-new-text") {
-                                "增加版本管理功能"
+                                "同步光宇hosts"
                             }
                         }
                     }

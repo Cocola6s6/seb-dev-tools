@@ -59,6 +59,7 @@ pub fn run() {
             hosts::hosts_current,
             hosts::hosts_writable,
             hosts::set_hosts_free,
+            hosts::sync_remote_hosts,
             client::client_defaults,
             client::list_alarm_types,
             client::client_devices,
