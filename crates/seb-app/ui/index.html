@@ -1851,18 +1851,21 @@
     }
     .whats-new-btn {
       padding: 5px 18px;
-      background: var(--accent);
-      color: #ffffff;
+      background: var(--accent) !important;
+      color: #ffffff !important;
       font-size: 12px;
       font-weight: 500;
-      border: none;
+      border: 1px solid var(--accent) !important;
       border-radius: 6px;
       cursor: pointer;
       box-shadow: 0 1px 4px var(--glow);
       transition: all .12s ease;
     }
+    .whats-new-btn:hover:not(:disabled),
     .whats-new-btn:hover {
-      background: var(--accent-2);
+      background: var(--accent-2) !important;
+      border-color: var(--accent-2) !important;
+      color: #ffffff !important;
       box-shadow: 0 2px 8px var(--glow);
     }
     .whats-new-btn:active {
@@ -1957,14 +1960,16 @@
       background: #f1f5f9;
     }
     .confirm-modal-btn.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #ffffff;
+      background: var(--accent) !important;
+      border-color: var(--accent) !important;
+      color: #ffffff !important;
       box-shadow: 0 2px 10px var(--glow);
     }
+    .confirm-modal-btn.primary:hover:not(:disabled),
     .confirm-modal-btn.primary:hover {
-      background: var(--accent-2);
-      border-color: var(--accent-2);
+      background: var(--accent-2) !important;
+      border-color: var(--accent-2) !important;
+      color: #ffffff !important;
       box-shadow: 0 2px 14px var(--glow);
     }
     .confirm-modal-btn.primary:active {
@@ -2407,8 +2412,9 @@
     .updater-badge {
       font-size: 10px;
       font-weight: 600;
-      color: #0284c7;
-      background: rgba(2, 132, 199, 0.1);
+      color: var(--accent);
+      background: var(--glow);
+      border: 1px solid var(--accent);
       padding: 2px 6px;
       border-radius: 4px;
       letter-spacing: 0.4px;
@@ -2417,6 +2423,10 @@
       font-size: 14px;
       font-weight: 600;
       color: var(--text);
+    }
+    .updater-title-v {
+      color: var(--accent);
+      font-weight: 700;
     }
     .updater-modal-body {
       padding: 16px 18px 12px;
@@ -2438,9 +2448,13 @@
       flex-direction: column;
       gap: 2px;
     }
-    .updater-v-chip.highlight .updater-v-val {
-      color: #0284c7;
+    .updater-v-chip.highlight .updater-v-label {
+      color: var(--accent);
       font-weight: 600;
+    }
+    .updater-v-chip.highlight .updater-v-val {
+      color: var(--accent);
+      font-weight: 700;
     }
     .updater-v-label {
       font-size: 10px;
@@ -2494,7 +2508,7 @@
     }
     .updater-progress-bar-fill {
       height: 100%;
-      background: linear-gradient(90deg, #0284c7, #38bdf8);
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
       border-radius: 3px;
       transition: width 0.15s ease-out;
     }
@@ -2523,32 +2537,41 @@
       transition: all 0.15s ease;
     }
     .updater-btn-secondary:hover {
-      background: #e2e8f0;
-      color: var(--text);
+      background: #e2e8f0 !important;
+      border-color: var(--line) !important;
+      color: var(--text) !important;
     }
     .updater-btn-primary {
       padding: 7px 20px;
-      background: var(--accent);
-      color: #ffffff;
+      background: var(--accent) !important;
+      color: #ffffff !important;
       font-size: 13px;
       font-weight: 500;
-      border: none;
+      border: 1px solid var(--accent) !important;
       border-radius: 6px;
       cursor: pointer;
       transition: all 0.15s ease;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
+    .updater-btn-primary:hover:not(:disabled),
     .updater-btn-primary:hover {
-      filter: brightness(1.08);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      background: var(--accent-2) !important;
+      border-color: var(--accent-2) !important;
+      color: #ffffff !important;
+      filter: brightness(1.05);
+      box-shadow: 0 3px 8px var(--glow);
+    }
+    .updater-btn-primary:active:not(:disabled) {
+      transform: scale(0.97);
+      filter: brightness(0.95);
     }
     .updater-btn-disabled {
       padding: 6px 18px;
-      background: #94a3b8;
-      color: #ffffff;
+      background: #94a3b8 !important;
+      color: #ffffff !important;
       font-size: 12px;
       font-weight: 500;
-      border: none;
+      border: 1px solid #94a3b8 !important;
       border-radius: 6px;
       cursor: not-allowed;
     }

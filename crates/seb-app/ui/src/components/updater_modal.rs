@@ -15,7 +15,7 @@ pub fn UpdaterModal() -> View {
 
     let start_update = move |_| {
         ctx.update_downloading.set(true);
-        ctx.update_status_text.set("正在从腾讯云 COS 下载更新包...".to_string());
+        ctx.update_status_text.set("正在下载更新包...".to_string());
 
         let ctx_clone = ctx;
         api::listen_update_progress(move |prog| {
@@ -43,7 +43,7 @@ pub fn UpdaterModal() -> View {
                 "ready" => {
                     ctx_clone.update_downloading.set(false);
                     ctx_clone.update_ready_to_restart.set(true);
-                    ctx_clone.update_status_text.set("🎉 更新安装完成！请重启应用生效。".to_string());
+                    ctx_clone.update_status_text.set("更新安装完成！请重启应用生效。".to_string());
                 }
                 "error" => {
                     ctx_clone.update_downloading.set(false);
@@ -58,7 +58,7 @@ pub fn UpdaterModal() -> View {
                 Ok(_) => {
                     ctx.update_downloading.set(false);
                     ctx.update_ready_to_restart.set(true);
-                    ctx.update_status_text.set("🎉 更新安装完成！请重启应用生效。".to_string());
+                    ctx.update_status_text.set("更新安装完成！请重启应用生效。".to_string());
                 }
                 Err(e) => {
                     ctx.update_downloading.set(false);
@@ -94,14 +94,16 @@ pub fn UpdaterModal() -> View {
                         div(class="updater-modal-card") {
                             div(class="updater-modal-head") {
                                 div(class="updater-modal-title-group") {
-                                    span(class="updater-badge") { "UPGRADE" }
-                                    span(class="updater-modal-title") { (format!("发现新版本 v{}", latest.get_clone())) }
+                                    span(class="updater-modal-title") {
+                                        "发现新版本 "
+                                        span(class="updater-title-v") { (format!("v{}", latest.get_clone())) }
+                                    }
                                 }
                                 (if !ctx.update_downloading.get() {
                                     view! {
                                         button(
                                             class="whats-new-close",
-                                            title="稍后提醒",
+                                            title="关闭",
                                             on:click=close
                                         ) {
                                             svg(viewBox="0 0 24 24", width="13", height="13", fill="none", stroke="currentColor", stroke-width="2", stroke-linecap="round", stroke-linejoin="round") {
@@ -174,9 +176,6 @@ pub fn UpdaterModal() -> View {
                                     }
                                 } else {
                                     view! {
-                                        button(class="updater-btn-secondary", on:click=close) {
-                                            "稍后提醒"
-                                        }
                                         button(class="updater-btn-primary", on:click=start_update) {
                                             "立即升级"
                                         }
