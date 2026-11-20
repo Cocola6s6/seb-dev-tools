@@ -94,10 +94,13 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                 .get_clone()
                 .into_iter()
                 .map(|d| {
+                    let ecu_no = d.config.ecu_no.trim().to_string();
                     let bike_no = if !d.config.bike_no.trim().is_empty() {
                         d.config.bike_no.trim().to_string()
                     } else {
-                        map.get(&d.config.device_no).cloned().unwrap_or_default()
+                        map.get(if ecu_no.is_empty() { &d.config.device_no } else { &ecu_no })
+                            .cloned()
+                            .unwrap_or_default()
                     };
                     let bike_no = (!bike_no.trim().is_empty()).then_some(bike_no);
                     DeviceRow {
@@ -106,6 +109,7 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                             .map(|no| qr_url(&tmpl, DEFAULT_BIKE_QR, "{bike_no}", no)),
                         qr_label: bike_no,
                         no: d.config.device_no,
+                        ecu_no: (!ecu_no.is_empty()).then_some(ecu_no),
                         host: d.config.host,
                         connected: d.connected,
                         coordinates: d.config.profile.coordinates,
@@ -124,9 +128,21 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
             if input_no.is_empty() {
                 return;
             }
-            let current_gw = c.gateway.get_clone();
+            if c.querying.get() {
+                return;
+            }
+            let add_gateway = c.add_gateway.get_clone();
+            let current_gw = if add_gateway.trim().is_empty() {
+                c.gateway.get_clone()
+            } else {
+                add_gateway
+            };
+            c.device_input.set(input_no.clone());
+            c.querying.set(true);
+            ctx.show_loading("正在查询车辆信息...");
             spawn_local(async move {
-                match api::client_resolve_bike(&input_no, Some(&current_gw)).await {
+                let query_gateway = (!current_gw.trim().is_empty()).then_some(current_gw.as_str());
+                match api::client_resolve_bike(&input_no, query_gateway).await {
                     Ok(Some(info)) => {
                         let ecu = info.ecu_no;
                         let bike = info.bike_no;
@@ -134,51 +150,73 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                         map.insert(ecu.clone(), bike.clone());
                         c.bike_map.set(map);
 
-                        if c.devices.get_clone().iter().any(|d| d.config.device_no == ecu) {
-                            c.select(&ecu);
-                            ctx.toast(format!("已选中车辆 {bike}"));
-                            return;
-                        }
-                        let mut config = c.config(ecu.clone());
-                        config.bike_no = bike.clone();
-                        config.ecu_no = String::new();
-                        match api::client_update_device(config).await {
-                            Ok(list) => {
-                                c.devices.set(list);
-                                c.select(&ecu);
-                                if let Some(bat) = info.battery_no {
-                                    if !bat.trim().is_empty() {
-                                        c.battery_no.set(bat);
-                                    }
+                        if let Some(existing) = existing_device_no(c, &ecu, &current_gw) {
+                            c.select(&existing);
+                            if let Some(bat) = info.battery_no {
+                                if !bat.trim().is_empty() {
+                                    c.battery_no.set(bat);
                                 }
-                                ctx.toast(format!("已添加车辆 {bike}"));
                             }
-                            Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                            ctx.toast(format!("设备已存在：{bike}"));
+                        } else {
+                            let device_no = next_device_no(c, &ecu);
+                            let mut config = c.config_for_gateway(device_no.clone(), &current_gw);
+                            config.bike_no = bike.clone();
+                            config.ecu_no = ecu.clone();
+                            match api::client_add_device(config).await {
+                                Ok(list) => {
+                                    c.devices.set(list);
+                                    c.select(&device_no);
+                                    if let Some(bat) = info.battery_no {
+                                        if !bat.trim().is_empty() {
+                                            c.battery_no.set(bat);
+                                        }
+                                    }
+                                    ctx.toast(format!("已添加车辆 {bike}"));
+                                }
+                                Err(e) => {
+                                    ctx.log_client(format!("【错误】{e}"), LogLevel::Error);
+                                    ctx.toast(format!("添加车辆失败: {e}"));
+                                }
+                            }
                         }
                     }
                     Ok(None) => {
                         let norm = normalize_ecu_no(&input_no);
-                        if !norm.is_empty() && norm.chars().all(|ch| ch.is_ascii_digit()) {
-                            let mut config = c.config(norm.clone());
+                        let ecu = if !norm.is_empty() && norm.chars().all(|ch| ch.is_ascii_digit()) {
+                            norm
+                        } else {
+                            input_no.clone()
+                        };
+                        if let Some(existing) = existing_device_no(c, &ecu, &current_gw) {
+                            c.select(&existing);
+                            ctx.toast(format!("设备已存在：{ecu}"));
+                        } else {
+                            let device_no = next_device_no(c, &ecu);
+                            let mut config = c.config_for_gateway(device_no.clone(), &current_gw);
                             config.bike_no = String::new();
-                            config.ecu_no = norm.clone();
-                            match api::client_update_device(config).await {
+                            config.ecu_no = ecu.clone();
+                            match api::client_add_device(config).await {
                                 Ok(list) => {
                                     c.devices.set(list);
-                                    c.select(&norm);
-                                    ctx.toast(format!("已按中控 ECU {norm} 添加"));
+                                    c.select(&device_no);
+                                    ctx.log_client(format!("【警告】未查到车辆编号 {input_no}，已按设备编号新增"), LogLevel::Warn);
+                                    ctx.toast(format!("未查到车辆，已按设备 {ecu} 添加"));
                                 }
-                                Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                                Err(e) => {
+                                    ctx.log_client(format!("【错误】{e}"), LogLevel::Error);
+                                    ctx.toast(format!("添加设备失败: {e}"));
+                                }
                             }
-                        } else {
-                            ctx.log_client(format!("【警告】未在数据库查到车辆编号 {input_no} 绑定的中控 ECU"), LogLevel::Warn);
-                            ctx.toast(format!("未查到车辆编号 {input_no}"));
                         }
                     }
                     Err(e) => {
                         ctx.log_client(format!("【错误】查询车辆失败: {e}"), LogLevel::Error);
+                        ctx.toast(format!("查询车辆失败: {e}"));
                     }
                 }
+                c.querying.set(false);
+                c.adding_device.set(false);
             });
         }),
         remove: Rc::new(move |no: String| {
@@ -197,7 +235,7 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
         }),
         rename: Some(Rc::new(move |old_no: String, new_val: String| {
             let new_val = new_val.trim().to_string();
-            if new_val.is_empty() {
+            if new_val.is_empty() || c.querying.get() {
                 return;
             }
             let old_no_clone = old_no.clone();
@@ -209,6 +247,8 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                     format!("{}:{}", dev_cfg.host, dev_cfg.port)
                 }
             };
+            c.querying.set(true);
+            ctx.show_loading("正在查询车辆信息...");
             spawn_local(async move {
                 match api::client_resolve_bike(&new_val, Some(&gw)).await {
                     Ok(Some(info)) => {
@@ -228,6 +268,7 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                                 c.devices.set(list);
                             }
                             ctx.toast(format!("已更新车辆编号为 {new_bike}"));
+                            c.querying.set(false);
                             return;
                         }
                         match api::client_rename_device(&old_no_clone, &new_ecu).await {
@@ -244,7 +285,10 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                                 }
                                 ctx.toast(format!("已更新车辆 {new_bike}"));
                             }
-                            Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                            Err(e) => {
+                                ctx.log_client(format!("【错误】{e}"), LogLevel::Error);
+                                ctx.toast(format!("更新车辆失败: {e}"));
+                            }
                         }
                     }
                     Ok(None) => {
@@ -271,12 +315,48 @@ fn client_source(ctx: AppCtx) -> DeviceSource {
                             ctx.toast(format!("未查到车辆编号 {new_val}"));
                         }
                     }
-                    Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                    Err(e) => {
+                        ctx.log_client(format!("【错误】查询失败: {e}"), LogLevel::Error);
+                        ctx.toast(format!("查询失败: {e}"));
+                    }
                 }
+                c.querying.set(false);
             });
         })),
         toggle_connect: Rc::new(move |no: String| toggle_device_connect(c, ctx, no)),
     }
+}
+
+fn next_device_no(c: ClientCtx, ecu_no: &str) -> String {
+    let devices = c.devices.get_clone();
+    if !devices.iter().any(|d| d.config.device_no == ecu_no) {
+        return ecu_no.to_string();
+    }
+    let mut index = 2;
+    loop {
+        let candidate = format!("{ecu_no}#{index}");
+        if !devices.iter().any(|d| d.config.device_no == candidate) {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
+fn existing_device_no(c: ClientCtx, ecu_no: &str, gateway: &str) -> Option<String> {
+    let (host, port) = gateway.trim().rsplit_once(':').unwrap_or((gateway.trim(), ""));
+    let host = host.trim();
+    let port = port.trim().parse::<u16>().unwrap_or(0);
+    c.devices.get_clone().into_iter().find_map(|d| {
+        let existing_ecu = if d.config.ecu_no.trim().is_empty() {
+            d.config.device_no.trim()
+        } else {
+            d.config.ecu_no.trim()
+        };
+        (existing_ecu == ecu_no.trim()
+            && d.config.host.trim() == host
+            && d.config.port == port)
+            .then_some(d.config.device_no)
+    })
 }
 
 #[component]

@@ -6,6 +6,16 @@ use crate::state::{
 
 /// 设备列宽度有限，编号超过这个长度就中间省略，完整值留在 title 里
 const NO_MAX: usize = 18;
+const CLIENT_GW_INNER: &str = "bike-seb-inner-test.costrip.cn:32405";
+
+fn client_gateway(configured: String, fallback: &str) -> String {
+    if configured.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        configured.trim().to_string()
+    }
+}
+
 use gloo_timers::future::TimeoutFuture;
 use std::rc::Rc;
 use sycamore::prelude::*;
@@ -15,6 +25,7 @@ use wasm_bindgen_futures::spawn_local;
 #[derive(Clone, PartialEq)]
 pub struct DeviceRow {
     pub no: String,
+    pub ecu_no: Option<String>,
     pub host: String,
     pub connected: bool,
     pub coordinates: String,
@@ -73,20 +84,21 @@ pub fn qr_panel(src: DeviceSource) -> View {
                     view=move |row: DeviceRow| {
                         let src = src.clone();
                         let no = row.no.clone();
+                        let display_no = row.ecu_no.clone().unwrap_or_else(|| no.clone());
                         let connected = row.connected;
                         let (env_label, env) = host_env_tag(&ctx.global_settings.get_clone(), &row.host);
                         let label = row.qr_label.clone().unwrap_or_default();
                         let url = row.qr_url.clone().unwrap_or_default();
                         let is_damaged = url.trim().is_empty();
                         let shown_label = if is_damaged {
-                            format!("{} (未查到车辆编号)", elide_middle(&no, 8))
+                            format!("{} (未查到车辆编号)", elide_middle(&display_no, 8))
                         } else {
                             elide_middle(&label, NO_MAX)
                         };
                         let tooltip_title = if is_damaged {
-                            format!("设备序列号: {no}\n提示: 网关/数据库未查询到该 ECU 关联的车辆编号\n单击选中，双击{}", if connected { "断开连接" } else { "连接并登录" })
+                            format!("设备序列号: {display_no}\n提示: 网关/数据库未查询到该 ECU 关联的车辆编号\n单击选中，双击{}", if connected { "断开连接" } else { "连接并登录" })
                         } else {
-                            format!("车辆编号: {label}\n设备序列号: {no}\n单击选中，双击{}", if connected { "断开连接" } else { "连接并登录" })
+                            format!("车辆编号: {label}\n设备序列号: {display_no}\n单击选中，双击{}", if connected { "断开连接" } else { "连接并登录" })
                         };
                         let cls = {
                             let src = src.clone();
@@ -115,18 +127,18 @@ pub fn qr_panel(src: DeviceSource) -> View {
                         let copy_link = {
                             let noun = src.qr_noun;
                             let label = label.clone();
-                            let no = no.clone();
+                            let display_no = display_no.clone();
                             let url = url.clone();
                             move |ev: web_sys::MouseEvent| {
                                 ev.stop_propagation();
                                 let url = url.clone();
                                 let label = label.clone();
-                                let no = no.clone();
+                                let display_no = display_no.clone();
                                 spawn_local(async move {
                                     if is_damaged {
-                                        let _ = api::copy_to_clipboard(&no).await;
+                                        let _ = api::copy_to_clipboard(&display_no).await;
                                         copied.set(true);
-                                        ctx.toast(format!("未查到车辆编号，已复制设备序列号 {no}"));
+                                        ctx.toast(format!("未查到车辆编号，已复制设备序列号 {display_no}"));
                                     } else {
                                         let _ = api::copy_to_clipboard(&url).await;
                                         copied.set(true);
@@ -147,9 +159,9 @@ pub fn qr_panel(src: DeviceSource) -> View {
                             let no = no.clone();
                             move |_| (src.toggle_connect)(no.clone())
                         };
-                        let has_ecu = src.page == Page::Client && !no.trim().is_empty();
-                        let ecu_title = format!("中控 ECU: {no}");
-                        let ecu_text = no.clone();
+                        let has_ecu = src.page == Page::Client && !display_no.trim().is_empty();
+                        let ecu_title = format!("中控 ECU: {display_no}");
+                        let ecu_text = display_no.clone();
                         let bike_no_title = if is_damaged {
                             format!("设备 {no} (未查到关联车辆编号)")
                         } else {
@@ -208,11 +220,16 @@ pub fn device_list(src: DeviceSource) -> View {
         let src = src.clone();
         Rc::new(move || {
             let no = new_no.get_clone().trim().to_string();
-            adding.set(false);
             new_no.set(String::new());
-            if !no.is_empty() {
-                (src.add)(no);
+            if no.is_empty() {
+                adding.set(false);
+                if src.page == Page::Client {
+                    root_ctx.client.adding_device.set(false);
+                }
+                return;
             }
+            adding.set(false);
+            (src.add)(no);
         })
     };
 
@@ -335,9 +352,18 @@ pub fn device_list(src: DeviceSource) -> View {
         div(class="device-list", tabindex="0", on:keydown=on_list_keydown) {
             div(class="device-list-head") {
                 span { (head_text.get_clone()) }
-                button(class="icon-btn ok", title="新增设备", on:click=move |_| {
+                button(class="icon-btn ok", title="新增设备", disabled=move || src.page == Page::Client && root_ctx.client.querying.get(), on:click=move |_| {
                     adding.set(true);
                     new_no.set(String::new());
+                    if src.page == Page::Client {
+                        let current = root_ctx.client.gateway.get_clone();
+                        let inner = client_gateway(
+                            root_ctx.global_settings.get_clone().client.default_inner_gw,
+                            CLIENT_GW_INNER,
+                        );
+                        root_ctx.client.add_gateway.set(if current.trim().is_empty() { inner } else { current });
+                        root_ctx.client.adding_device.set(true);
+                    }
                     spawn_local(async {
                         TimeoutFuture::new(20).await;
                         if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
@@ -370,11 +396,18 @@ pub fn device_list(src: DeviceSource) -> View {
                             r#type="text",
                             placeholder=add_placeholder,
                             bind:value=new_no,
+                            disabled=move || src.page == Page::Client && root_ctx.client.querying.get(),
                             on:blur=move |_| on_blur(),
                             on:keydown=move |ev: web_sys::KeyboardEvent| {
                                 match ev.key().as_str() {
                                     "Enter" => confirm_add(),
-                                    "Escape" => { adding.set(false); new_no.set(String::new()); }
+                                    "Escape" => {
+                                        adding.set(false);
+                                        new_no.set(String::new());
+                                        if src.page == Page::Client {
+                                            root_ctx.client.adding_device.set(false);
+                                        }
+                                    }
                                     _ => {}
                                 }
                             }
@@ -391,6 +424,7 @@ pub fn device_list(src: DeviceSource) -> View {
                     view=move |row: DeviceRow| {
                         let src = src.clone();
                         let no = row.no.clone();
+                        let display_no = row.ecu_no.clone().unwrap_or_else(|| no.clone());
                         let connected = row.connected;
                         let (env_label, env) = host_env_tag(&root_ctx.global_settings.get_clone(), &row.host);
                         let pick = {
@@ -430,21 +464,21 @@ pub fn device_list(src: DeviceSource) -> View {
                                 if !label.trim().is_empty() {
                                     elide_middle(label, NO_MAX)
                                 } else {
-                                    elide_middle(&no, NO_MAX)
+                                    elide_middle(&display_no, NO_MAX)
                                 }
                             } else {
-                                elide_middle(&no, NO_MAX)
+                                elide_middle(&display_no, NO_MAX)
                             }
                         } else {
                             elide_middle(&no, NO_MAX)
                         };
                         let sub = if src.page == Page::Client {
                             if !connected {
-                                format!("{env_label} · ECU: {no} · 未连接")
+                                format!("{env_label} · ECU: {display_no} · 未连接")
                             } else if row.coordinates.is_empty() {
-                                format!("{env_label} · ECU: {no} · 无坐标")
+                                format!("{env_label} · ECU: {display_no} · 无坐标")
                             } else {
-                                format!("{env_label} · ECU: {no} · {}", row.coordinates)
+                                format!("{env_label} · ECU: {display_no} · {}", row.coordinates)
                             }
                         } else if !connected {
                             format!("{env_label} · 未连接")
@@ -462,7 +496,7 @@ pub fn device_list(src: DeviceSource) -> View {
                         let finish_edit = {
                             let src = src.clone();
                             let old_no = no.clone();
-                            let cur_label = row.qr_label.clone().unwrap_or_default();
+                            let cur_label = row.qr_label.clone().unwrap_or_else(|| display_no.clone());
                             move || {
                                 let val = editing_val.get_clone().trim().to_string();
                                 editing_item.set(None);
@@ -488,9 +522,9 @@ pub fn device_list(src: DeviceSource) -> View {
 
                         let tooltip_title = if src.page == Page::Client {
                             if let Some(label) = &row.qr_label {
-                                format!("车辆编号: {label}\n中控序列号 (ECU): {no}\n单击切换当前配置，双击{}", if connected { "断开连接" } else { "连接并登录" })
+                                format!("车辆编号: {label}\n中控序列号 (ECU): {display_no}\n单击切换当前配置，双击{}", if connected { "断开连接" } else { "连接并登录" })
                             } else {
-                                format!("设备序列号 (ECU): {no} (未关联车辆)\n单击切换当前配置，双击{}", if connected { "断开连接" } else { "连接并登录" })
+                                format!("设备序列号 (ECU): {display_no} (未关联车辆)\n单击切换当前配置，双击{}", if connected { "断开连接" } else { "连接并登录" })
                             }
                         } else {
                             format!("{}序列号: {no}\n单击切换当前配置，双击{}", src.noun, if connected { "断开连接" } else { "连接并登录" })
@@ -527,6 +561,7 @@ pub fn device_list(src: DeviceSource) -> View {
                                                     r#type="text",
                                                     placeholder=edit_placeholder,
                                                     bind:value=editing_val,
+                                                    disabled=move || src.page == Page::Client && root_ctx.client.querying.get(),
                                                     on:blur=move |_| on_blur(),
                                                     on:keydown=on_keydown
                                                 )

@@ -605,10 +605,21 @@ pub fn GlobalToast() -> View {
             view! {
                 div(class="global-toast-container") {
                     div(class="global-toast") {
-                        div(class="global-toast-icon-wrap") {
-                            svg(class="global-toast-icon", viewBox="0 0 24 24", fill="currentColor") {
-                                path(d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z") {}
-                            }
+                        div(class=move || if ctx.toast_loading.get() { "global-toast-icon-wrap loading" } else { "global-toast-icon-wrap" }) {
+                            (if ctx.toast_loading.get() {
+                                view! {
+                                    svg(class="global-toast-icon", viewBox="0 0 24 24", fill="none", stroke="currentColor", stroke-width="2") {
+                                        circle(cx="12", cy="12", r="8") {}
+                                        path(d="M12 4a8 8 0 0 1 8 8") {}
+                                    }
+                                }
+                            } else {
+                                view! {
+                                    svg(class="global-toast-icon", viewBox="0 0 24 24", fill="currentColor") {
+                                        path(d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z") {}
+                                    }
+                                }
+                            })
                         }
                         span(class="global-toast-text") { (msg) }
                     }

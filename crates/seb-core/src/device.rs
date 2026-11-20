@@ -261,7 +261,12 @@ impl DeviceLink {
     }
 
     fn current_device_no(&self) -> String {
-        self.device_no()
+        let cfg = self.shared.cfg.lock().unwrap();
+        if cfg.ecu_no.trim().is_empty() {
+            cfg.device_no.clone()
+        } else {
+            cfg.ecu_no.trim().to_string()
+        }
     }
 
     fn profile(&self) -> SimProfile {
@@ -614,6 +619,13 @@ impl DeviceFleet {
                 (link, false)
             }
         }
+    }
+
+    pub fn add(&self, cfg: DeviceConfig) -> Arc<DeviceLink> {
+        let mut links = self.links.lock().unwrap();
+        let link = Arc::new(DeviceLink::new(cfg));
+        links.insert(0, link.clone());
+        link
     }
 
     pub fn get(&self, device_no: &str) -> Result<Arc<DeviceLink>, String> {

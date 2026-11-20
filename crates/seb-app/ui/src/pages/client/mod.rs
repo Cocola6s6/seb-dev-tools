@@ -49,6 +49,7 @@ pub fn ClientPage() -> View {
     let gw_prod = create_memo(move || gw_or(ctx.global_settings.get_clone().client.default_prod_gw, GW_PROD));
     let battery_dropdown_open = create_signal(false);
     let qr_selection_seq = Rc::new(Cell::new(0u32));
+    let resolving = c.querying;
 
     // 表单任一项变动就把配置同步给后台；owner 为空说明正在切设备，这一轮不能写。
     // 配置要落盘，所以连续输入时只认最后一次
@@ -451,13 +452,19 @@ pub fn ClientPage() -> View {
 
     let resolve_device_input = {
         let ctx = ctx.clone();
+        let resolving = resolving.clone();
         move || {
+            if resolving.get() {
+                return;
+            }
             let input_val = c.device_input.get_clone().trim().to_string();
             if input_val.is_empty() {
                 return;
             }
             let old_owner = c.owner.get_clone();
             let current_gw = c.gateway.get_clone();
+            resolving.set(true);
+            ctx.show_loading("正在查询车辆信息...");
 
             spawn_local(async move {
                 match api::client_resolve_bike(&input_val, Some(&current_gw)).await {
@@ -561,12 +568,37 @@ pub fn ClientPage() -> View {
                             }
                             ctx.toast(format!("已按中控 ECU {norm} 就绪 (可直接上报)"));
                         } else {
+                            let selected = c.selected.get_clone();
+                            let mut map = c.bike_map.get_clone();
+                            map.remove(&selected);
+                            c.bike_map.set(map);
                             ctx.log_client(format!("【警告】未查询到车辆编号或有效 ECU 序列号: {input_val}"), LogLevel::Warn);
+                            c.bike_no.set(String::new());
+                            c.ecu_no.set(String::new());
+                            c.device_input.set(input_val.clone());
+                            ctx.bike_no.set(String::new());
+                            if !selected.is_empty() {
+                                let mut config = c.config(selected.clone());
+                                config.bike_no = String::new();
+                                config.ecu_no = String::new();
+                                match api::client_update_device(config).await {
+                                    Ok(list) => {
+                                        c.devices.set(list);
+                                        c.select(&selected);
+                                        c.device_input.set(input_val.clone());
+                                    }
+                                    Err(e) => ctx.log_client(format!("【错误】{e}"), LogLevel::Error),
+                                }
+                            } else {
+                                c.device_no.set(String::new());
+                                ctx.device_no.set(String::new());
+                            }
                             ctx.toast(format!("未查询到车辆或 ECU: {input_val}"));
                         }
                     }
                     Err(e) => ctx.log_client(format!("【错误】查询失败: {e}"), LogLevel::Error),
                 }
+                resolving.set(false);
             });
         }
     };
@@ -579,6 +611,18 @@ pub fn ClientPage() -> View {
         let resolve = resolve_device_input.clone();
         move |ev: web_sys::KeyboardEvent| {
             if ev.key() == "Enter" {
+                resolve();
+            }
+        }
+    };
+    let switch_gateway = {
+        let resolve = resolve_device_input.clone();
+        move |gateway: String| {
+            if c.adding_device.get() {
+                c.add_gateway.set(gateway);
+            } else {
+                c.owner.set(String::new());
+                c.gateway.set(gateway);
                 resolve();
             }
         }
@@ -608,7 +652,11 @@ pub fn ClientPage() -> View {
                                     span { "车辆或中控编号" }
                                     (move || {
                                         let bike = c.bike_no.get_clone();
-                                        let ecu = c.device_no.get_clone();
+                                        let ecu = if c.ecu_no.get_clone().trim().is_empty() {
+                                            c.device_no.get_clone()
+                                        } else {
+                                            c.ecu_no.get_clone()
+                                        };
                                         if !bike.is_empty() && !ecu.is_empty() && bike != ecu {
                                             let ecu_title = format!("当前生效中控 ECU: {ecu}");
                                             let ecu_text = format!("ECU: {ecu}");
@@ -630,6 +678,7 @@ pub fn ClientPage() -> View {
                                     r#type="text",
                                     placeholder="输入车辆编号或 ECU 序列号，失焦/回车就绪",
                                     bind:value=c.device_input,
+                                    disabled=resolving.get(),
                                     on:blur=on_device_input_blur,
                                     on:keydown=on_device_input_keydown
                                 )
@@ -640,29 +689,53 @@ pub fn ClientPage() -> View {
                                     div(class="gateway-env-shortcuts") {
                                         button(
                                             r#type="button",
-                                            class=move || if c.gateway.get_clone().trim() == gw_inner.get_clone() { "env-chip inner active" } else { "env-chip inner" },
+                                            class=move || {
+                                                let gateway = if c.adding_device.get() { c.add_gateway.get_clone() } else { c.gateway.get_clone() };
+                                                if gateway.trim() == gw_inner.get_clone() { "env-chip inner active" } else { "env-chip inner" }
+                                            },
                                             title="快捷填入内网网关",
-                                            on:click=move |_| c.gateway.set(gw_inner.get_clone())
+                                            disabled=resolving.get(),
+                                            on:mousedown=move |ev: web_sys::MouseEvent| ev.prevent_default(),
+                                            on:click={
+                                                let switch_gateway = switch_gateway.clone();
+                                                move |_| switch_gateway(gw_inner.get_clone())
+                                            }
                                         ) { "内网" }
                                         button(
                                             r#type="button",
-                                            class=move || if c.gateway.get_clone().trim() == gw_test.get_clone() { "env-chip test active" } else { "env-chip test" },
+                                            class=move || {
+                                                let gateway = if c.adding_device.get() { c.add_gateway.get_clone() } else { c.gateway.get_clone() };
+                                                if gateway.trim() == gw_test.get_clone() { "env-chip test active" } else { "env-chip test" }
+                                            },
                                             title="快捷填入外网网关",
-                                            on:click=move |_| c.gateway.set(gw_test.get_clone())
+                                            disabled=resolving.get(),
+                                            on:mousedown=move |ev: web_sys::MouseEvent| ev.prevent_default(),
+                                            on:click={
+                                                let switch_gateway = switch_gateway.clone();
+                                                move |_| switch_gateway(gw_test.get_clone())
+                                            }
                                         ) { "外网" }
                                         button(
                                             r#type="button",
-                                            class=move || if c.gateway.get_clone().trim() == gw_prod.get_clone() { "env-chip prod active" } else { "env-chip prod" },
+                                            class=move || {
+                                                let gateway = if c.adding_device.get() { c.add_gateway.get_clone() } else { c.gateway.get_clone() };
+                                                if gateway.trim() == gw_prod.get_clone() { "env-chip prod active" } else { "env-chip prod" }
+                                            },
                                             title="快捷填入正式网关",
-                                            on:click=move |_| c.gateway.set(gw_prod.get_clone())
+                                            disabled=resolving.get(),
+                                            on:mousedown=move |ev: web_sys::MouseEvent| ev.prevent_default(),
+                                            on:click={
+                                                let switch_gateway = switch_gateway.clone();
+                                                move |_| switch_gateway(gw_prod.get_clone())
+                                            }
                                         ) { "正式" }
                                     }
                                 }
-                                input(r#type="text", placeholder="域名:端口", bind:value=c.gateway)
+                                input(r#type="text", placeholder="域名:端口", bind:value=c.gateway, disabled=resolving.get())
                             }
                             div(class="card-actions") {
-                                button(class="primary", on:click=connect) { (conn_btn_text.get_clone()) }
-                                button(on:click=disconnect) { (disconn_btn_text.get_clone()) }
+                                button(class="primary", disabled=resolving.get(), on:click=connect) { (conn_btn_text.get_clone()) }
+                                button(disabled=resolving.get(), on:click=disconnect) { (disconn_btn_text.get_clone()) }
                                 span(class="spacer") {}
                                 Check(label="自动心跳", checked=c.heartbeat)
                             }

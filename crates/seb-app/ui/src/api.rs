@@ -459,6 +459,14 @@ pub async fn client_update_device(config: DeviceConfig) -> Result<Vec<DeviceStat
     invoke("client_update_device", A { config }).await
 }
 
+pub async fn client_add_device(config: DeviceConfig) -> Result<Vec<DeviceState>, String> {
+    #[derive(Serialize)]
+    struct A {
+        config: DeviceConfig,
+    }
+    invoke("client_add_device", A { config }).await
+}
+
 pub async fn client_rename_device(old_no: &str, new_no: &str) -> Result<Vec<DeviceState>, String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]

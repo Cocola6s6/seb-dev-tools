@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use sycamore::prelude::*;
 
+fn parse_gateway(text: &str) -> (String, u16) {
+    let (host, port) = text.trim().rsplit_once(':').unwrap_or((text.trim(), ""));
+    (host.trim().to_string(), port.trim().parse().unwrap_or(0))
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SimProfile {
@@ -159,6 +164,9 @@ pub struct ClientCtx {
     pub bike_no: Signal<String>,
     pub ecu_no: Signal<String>,
     pub device_input: Signal<String>,
+    pub querying: Signal<bool>,
+    pub adding_device: Signal<bool>,
+    pub add_gateway: Signal<String>,
 }
 
 impl ClientCtx {
@@ -194,6 +202,9 @@ impl ClientCtx {
             bike_no: create_signal(String::new()),
             ecu_no: create_signal(String::new()),
             device_input: create_signal(String::new()),
+            querying: create_signal(false),
+            adding_device: create_signal(false),
+            add_gateway: create_signal(String::new()),
         }
     }
 
@@ -208,13 +219,16 @@ impl ClientCtx {
     }
 
     pub fn split_gateway(&self) -> (String, u16) {
-        let text = self.gateway.get_clone();
-        let (host, port) = text.trim().rsplit_once(':').unwrap_or((text.trim(), ""));
-        (host.trim().to_string(), port.trim().parse().unwrap_or(0))
+        parse_gateway(&self.gateway.get_clone())
     }
 
     pub fn config(&self, device_no: String) -> DeviceConfig {
-        let (host, port) = self.split_gateway();
+        let gateway = self.gateway.get_clone();
+        self.config_for_gateway(device_no, &gateway)
+    }
+
+    pub fn config_for_gateway(&self, device_no: String, gateway: &str) -> DeviceConfig {
+        let (host, port) = parse_gateway(gateway);
         DeviceConfig {
             device_no,
             host,

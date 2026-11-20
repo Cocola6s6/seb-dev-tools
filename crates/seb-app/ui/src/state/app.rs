@@ -60,6 +60,7 @@ pub struct AppCtx {
     pub control_types: Signal<Vec<ControlType>>,
     pub deploy_options: Signal<DeployOptions>,
     pub toast_msg: Signal<Option<String>>,
+    pub toast_loading: Signal<bool>,
     toast_seq: Signal<u32>,
     pub show_whats_new: Signal<bool>,
     pub confirm_modal: Signal<Option<ConfirmModalState>>,
@@ -98,6 +99,7 @@ impl AppCtx {
             control_types: create_signal(Vec::new()),
             deploy_options: create_signal(DeployOptions::default()),
             toast_msg: create_signal(None),
+            toast_loading: create_signal(false),
             toast_seq: create_signal(0),
             show_whats_new: create_signal(false),
             confirm_modal: create_signal(None),
@@ -134,6 +136,7 @@ impl AppCtx {
     }
 
     pub fn toast(&self, msg: impl Into<String>) {
+        self.toast_loading.set(false);
         self.toast_msg.set(Some(msg.into()));
         let seq = self.toast_seq.get() + 1;
         self.toast_seq.set(seq);
@@ -145,6 +148,13 @@ impl AppCtx {
                 msg_sig.set(None);
             }
         });
+    }
+
+    pub fn show_loading(&self, msg: impl Into<String>) {
+        self.toast_loading.set(true);
+        self.toast_msg.set(Some(msg.into()));
+        let seq = self.toast_seq.get() + 1;
+        self.toast_seq.set(seq);
     }
 
     pub fn trigger_check_update(&self, manual: bool) {

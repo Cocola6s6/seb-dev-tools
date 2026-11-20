@@ -64,6 +64,7 @@ pub fn run() {
             client::list_alarm_types,
             client::client_devices,
             client::client_update_device,
+            client::client_add_device,
             client::client_rename_device,
             client::client_remove_device,
             client::client_connect,

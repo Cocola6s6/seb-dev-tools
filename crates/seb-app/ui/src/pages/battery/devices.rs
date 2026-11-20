@@ -83,6 +83,7 @@ fn battery_source(ctx: AppCtx) -> DeviceSource {
                         qr_url: Some(qr_url(&tmpl, DEFAULT_BATTERY_QR, "{battery_no}", &no)),
                         qr_label: Some(no.clone()),
                         no,
+                        ecu_no: None,
                         host: d.config.host,
                         connected: d.connected,
                         coordinates: d.config.coordinates,

@@ -110,6 +110,20 @@ pub async fn client_update_device(
 }
 
 #[tauri::command]
+pub async fn client_add_device(
+    state: State<'_, AppState>,
+    mut config: DeviceConfig,
+) -> Result<Vec<DeviceState>, String> {
+    config.device_no = config.device_no.trim().to_string();
+    if config.device_no.is_empty() {
+        return Err("中控设备序列号不能为空".to_string());
+    }
+    state.devices.add(config);
+    persist(&state).await;
+    Ok(state.devices.states())
+}
+
+#[tauri::command]
 pub async fn client_rename_device(
     state: State<'_, AppState>,
     old_no: String,
